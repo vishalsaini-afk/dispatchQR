@@ -188,8 +188,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
  <div class="card" id="partsMech" style="display:none">
   <div class="mechrow" style="border-style:solid"><label class="switch"><input type="checkbox" id="allMech"><i></i></label>
    <div><b>All positions mechanical joint</b><div class="hint">Sets every frame to 4 profiles.</div></div>
-   <span class="totchip" id="orderTot">0 parts</span></div>
-  <div class="row" style="margin-top:10px"><button class="btn ghost" id="rereadBtn">↻ Re-read parts from descriptions</button></div></div>
+   <span class="totchip" id="orderTot">0 parts</span></div></div>
  <div id="posList"></div>
 </section>
 <section class="view" id="v-labels">
@@ -305,25 +304,23 @@ function applySystem(pos,key){const s=SYSTEMS.find(x=>x.key===key);pos.system=ke
 /* ---- read part counts from the quoted description text ---- */
 function partsFromText(t){
   t=(t||'').toLowerCase();if(!t)return null;
-  const CAP=10, clamp=n=>(!n||n<0||n>CAP)?0:n;
-  const numBefore=re=>{const m=t.match(re);return m?parseInt(m[1],10):0;};
+  const num=re=>{const m=t.match(re);return m?parseInt(m[1],10):0;};
   const has=re=>re.test(t);
-  let sash=0,mesh=0,georgian=0,coupling=0,sys='';
-  const track=clamp(numBefore(/(\d+)\s*(?:track|trk)\b/));
-  const shutter=clamp(numBefore(/(\d+)\s*(?:shutters?|leaf|leaves|vents?)\b/));
-  if(has(/slid|sliding|slider/)){sys=track>=3?'sld3':(has(/door/)?'slddoor':'sld2');sash=shutter||track||2;}
-  else if(has(/fix(ed)?/)&&!has(/openab|casement|hung/)){sys='fixed';sash=0;}
-  else if(has(/top[\s-]*hung|top hung/)){sys='th';sash=shutter||1;}
-  else if(has(/openab|casement|caset|side[\s-]*hung/)){sys=has(/door/)?'casedoor':'cw1';sash=shutter||1;}
-  else if(has(/ventilat|louver|louvre/)){sys='vent';sash=1;}
-  else{sash=shutter||1;}
-  sash=clamp(sash);let glass=sash||1;
-  if(has(/mesh|fly\s*mesh|\bnet\b|mosquito|insect/))mesh=1;
-  if(has(/georgian|grill|grille|glazing\s*bar|astragal|muntin/))georgian=1;
-  if(has(/coupl|mullion/))coupling=1;
+  let sash=0,glass=0,mesh=0,georgian=0,coupling=0,sys='';
+  const track=num(/(\d+)\s*(?:track|trk)/);
+  const shutter=num(/(\d+)\s*(?:shutter|shutters|panel|panels|leaf|leaves|pane|panes|sash|sashes|vent|vents)/);
+  if(has(/slid|sliding|slider/)){sys=track>=3?'sld3':(has(/door/)?'slddoor':'sld2');sash=shutter||track||2;glass=sash;}
+  else if(has(/fix(ed)?/)&&!has(/openab|casement|shutter|sash|vent|hung/)){sys='fixed';sash=0;glass=num(/(\d+)\s*(?:pane|panes|glass|lite|lites)/)||1;}
+  else if(has(/top[\s-]*hung|top hung/)){sys='th';sash=shutter||1;glass=sash;}
+  else if(has(/openab|casement|caset|side[\s-]*hung/)){sys=has(/door/)?'casedoor':'cw1';sash=shutter||1;glass=sash;}
+  else if(has(/ventilat|louver|louvre/)){sys='vent';sash=1;glass=1;}
+  else{sash=shutter;glass=num(/(\d+)\s*(?:glass|glazing|dgu|lite|lites|pane|panes)/)||shutter||1;}
+  if(has(/mesh|fly\s*mesh|\bnet\b|mosquito|insect/))mesh=num(/(\d+)\s*(?:mesh|net)/)||1;
+  if(has(/georgian|grill|grille|glazing\s*bar|astragal|muntin/))georgian=num(/(\d+)\s*(?:georgian|grill|grille|bar|bars)/)||1;
+  if(has(/coupl|mullion|combinat/))coupling=num(/(\d+)\s*(?:coupl|mullion)/)||1;
   if(!sash&&!glass&&!mesh&&!coupling&&!georgian&&!sys)return null;
-  return {sash,glass,mesh,georgian,coupling,sys};
-};
+  if(!glass)glass=sash||1;
+  return{sash,glass,mesh,georgian,coupling,sys};
 }
 /* ---- order-level hardware box units ---- */
 function hardwareUnits(o){const os=slug(o.offer),out=[];let n=0;
@@ -556,9 +553,6 @@ function deriveCode(label,used){const s=String(label).toUpperCase().replace(/[^A
  for(let i=0;i<s.length;i++)for(let j=i+1;j<s.length;j++){const c=s[i]+s[j];if(!used.has(c))return c;}
  const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ';for(const a of A)for(const b of A){const c=a+b;if(!used.has(c))return c;}return 'ZZ';}
 $('#allMech').onchange=e=>{const o=order();if(!o)return;o.mech=e.target.checked;o.positions.forEach(p=>{p.mech=e.target.checked;if(p.mech)p.parts.frame=4;});save();pushOrder(o);renderParts();};
-$('#rereadBtn').onclick=()=>{const o=order();if(!o)return;if(!confirm('Re-read part counts from each position\'s quotation description? This overwrites the current counts.'))return;
- o.positions.forEach(p=>{const pt=partsFromText(p.spec);if(pt){p.system=pt.sys||'';p.parts.sash=pt.sash;p.parts.glass=pt.glass;p.parts.mesh=pt.mesh;p.parts.georgian=pt.georgian;p.parts.coupling=pt.coupling;if(!p.mech)p.parts.frame=1;}});
- save();pushOrder(o);renderParts();};
 /* labels (positions + parts, no hardware) */
 function renderLabels(){const sel=$('#lblOrder');if(!sel)return;sel.innerHTML='';S.orders.forEach((o,i)=>{const op=el('option',null,o.offer+' — '+(o.cust.name||'—'));op.value=i;sel.appendChild(op);});sel.value=S.active;drawSheet();}
 $('#lblOrder').onchange=()=>{S.active=+$('#lblOrder').value;save();drawSheet();};$('#lblScope').onchange=()=>drawSheet();
