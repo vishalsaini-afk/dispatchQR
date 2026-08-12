@@ -1,0 +1,133 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Lingel Factory — QR</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#13161b"><link rel="apple-touch-icon" href="icon.svg"><meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#13161b;--panel:#1b2027;--panel2:#20262f;--line:#2b333d;--ink:#eef2f6;--mut:#9aa7b4;--hv:#ffce1f;--ok:#37c871;--bad:#ff5d5d;--acc:#5aa9ff}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif}
+.mono{font-family:'JetBrains Mono',monospace}a{color:var(--acc)}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#161a20,#12151a);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;align-items:center;gap:10px}
+.mark{width:36px;height:36px;border-radius:8px;background:var(--hv);color:#111;display:grid;place-items:center;font-weight:800;overflow:hidden}
+.mark img{width:100%;height:100%;object-fit:contain;background:#fff}
+h1{font-size:16px;margin:0}small{color:var(--mut);font-size:11px}
+.hspace{flex:1}
+.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:13px;cursor:pointer}
+.wrap{max-width:720px;margin:0 auto;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+.card h2{margin:0 0 10px;font-size:13px;letter-spacing:.03em;text-transform:uppercase;color:var(--mut)}
+.inp{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:12px;font-size:16px}
+.btn{background:var(--hv);color:#111;border:none;border-radius:11px;padding:12px 16px;font-weight:800;font-size:15px;cursor:pointer;width:100%}
+.btn.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--mut)}.hint{color:var(--mut);font-size:12px;line-height:1.5}
+.who{display:flex;align-items:center;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:460px){.tiles{grid-template-columns:1fr}}
+.tile{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;transition:.12s}
+.tile:active{transform:translateY(1px)}
+.tile .ic{font-size:26px;line-height:1}
+.tile b{display:block;font-size:16px;margin-top:8px}
+.tile span{display:block;color:var(--mut);font-size:12px;margin-top:3px;line-height:1.4}
+.tile.q{border-left:4px solid var(--hv)}.tile.s{border-left:4px solid var(--acc)}.tile.d{border-left:4px solid var(--ok)}.tile.l{border-left:4px solid #b28cff}
+.hide{display:none}
+</style></head><body>
+<header><div class="mark" id="mark">L</div>
+<div><h1>Lingel Factory — QR</h1><small>Quality · Store · Dispatch</small></div>
+<div class="hspace"></div>
+<button class="iconbtn" id="logoBtn" title="Set logo">🏷</button>
+<button class="iconbtn hide" id="gearBtn" title="Server settings">⚙</button></header>
+<div class="wrap">
+
+ <div class="card hide" id="setupCard">
+  <h2>Connect to the factory server</h2>
+  <div class="hint" style="margin-bottom:8px">Paste the factory Apps Script <b>/exec</b> URL (from the QR system's own Google Sheet → Apps Script → Deploy). Ask your admin if unsure. Stored on this device only.</div>
+  <input class="inp mono" id="apiInp" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+  <div style="margin-top:10px"><button class="btn" id="apiSave">Save server</button></div>
+ </div>
+
+ <div class="card hide" id="signCard">
+  <h2>Sign in</h2>
+  <input class="inp" id="whoInp" list="whoList" placeholder="Name" autocomplete="username">
+  <datalist id="whoList"></datalist>
+  <input class="inp" id="pwInp" type="password" placeholder="Password" autocomplete="current-password" style="margin-top:10px">
+  <div style="margin-top:10px"><button class="btn" id="whoGo">Sign in</button></div>
+  <div class="hint" id="signMsg" style="margin-top:8px"></div>
+ </div>
+
+ <div class="card hide" id="homeCard">
+  <div class="row" style="justify-content:space-between">
+   <div class="who"><span class="pill" id="whoPill">—</span></div>
+   <button class="btn ghost" id="logoutBtn" style="width:auto;padding:8px 14px">Log out</button>
+  </div>
+ </div>
+ <div class="tiles hide" id="tiles"></div>
+ <div class="card hide" id="noneCard"><div class="muted" id="noneMsg">You don't have access to any app yet. Ask an admin to set your access.</div></div>
+
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+function applyLogo(){const d=localStorage.getItem('lingel_logo');if(d)$('#mark').innerHTML='<img src="'+d+'">';}
+function api(){return localStorage.getItem('lingel_qr_api')||'';}
+async function postForm(u,params){const b=new URLSearchParams();Object.keys(params).forEach(k=>b.set(k,params[k]==null?'':params[k]));const r=await fetch(u,{method:'POST',body:b});return r.json().catch(()=>({}));}
+function superObj(){try{const v=localStorage.getItem('lingel_supervisor');if(!v)return null;return v.charAt(0)==='{'?JSON.parse(v):{name:v};}catch(e){return null;}}
+const TILES=[
+ {key:'quality',cls:'q',ic:'✅',title:'Quality',desc:'Import, print labels & QC scan',href:'qr-quality.html'},
+ {key:'store',cls:'s',ic:'📦',title:'Store / Pack',desc:'Read BOM, tick packing, box stickers',href:'qr-store.html'},
+ {key:'dispatch',cls:'d',ic:'🚚',title:'Dispatch',desc:'Club a truck, scan-to-load, report',href:'qr-dispatch.html'},
+ {key:'site',cls:'l',ic:'🔎',title:'Box Lookup',desc:'Scan a box to see its contents',href:'qr-box-lookup.html',open:true}
+];
+function show(id,on){$(id).classList.toggle('hide',!on);}
+function render(){
+ applyLogo();
+ const hasApi=!!api(), who=superObj();
+ $('#gearBtn').classList.toggle('hide',!hasApi);
+ if(!hasApi){show('#setupCard',true);show('#signCard',false);show('#homeCard',false);show('#tiles',false);show('#noneCard',false);return;}
+ if(!who||!who.name){show('#setupCard',false);show('#homeCard',false);show('#tiles',false);show('#noneCard',false);show('#signCard',true);loadNames();return;}
+ // signed in
+ show('#setupCard',false);show('#signCard',false);show('#homeCard',true);
+ $('#whoPill').textContent='👤 '+who.name;
+ loadTiles(who.name);
+}
+async function loadNames(){const u=api();if(!u)return;$('#signMsg').textContent='Loading names…';
+ try{const r=await postForm(u,{action:'names'});const names=(r&&r.names)||[];
+  $('#whoList').innerHTML=names.map(n=>'<option>'+esc(n)+'</option>').join('');
+  $('#signMsg').textContent=names.length?'':'No names found — you can still type your name.';}
+ catch(e){$('#signMsg').textContent='Could not reach the server — check the URL in ⚙.';}}
+async function loadTiles(name){let apps=null;
+ try{const a=JSON.parse(localStorage.getItem('lingel_access')||'null');if(a&&a.name===name)apps=a.apps||[];}catch(e){}
+ if(apps===null){const u=api();if(u){try{const r=await postForm(u,{action:'access',name});if(r&&r.ok)apps=r.apps||[];}catch(e){}}}
+ // soft: if we can't verify, show all
+ const allow=k=>!apps||apps.indexOf('*')>=0||apps.indexOf(k)>=0;
+ const list=TILES.filter(t=>t.open||allow(t.key));
+ const box=$('#tiles');box.innerHTML='';
+ list.forEach(t=>{const a=document.createElement('a');a.className='tile '+t.cls;a.href=t.href;
+  a.innerHTML='<div class="ic">'+t.ic+'</div><b>'+t.title+'</b><span>'+t.desc+'</span>';box.appendChild(a);});
+ show('#tiles',list.length>0);
+ show('#noneCard',list.length===0);
+}
+/* actions */
+$('#apiSave').onclick=()=>{const v=($('#apiInp').value||'').trim();if(!v)return;localStorage.setItem('lingel_qr_api',v);render();};
+$('#gearBtn').onclick=()=>{const cur=api();const v=prompt('Factory server /exec URL:',cur||'');if(v!==null){const t=v.trim();if(t){localStorage.setItem('lingel_qr_api',t);localStorage.removeItem('lingel_access');render();}}};
+async function doLogin(){const u=api();const name=($('#whoInp').value||'').trim();const pass=$('#pwInp').value||'';
+ if(!name){$('#signMsg').textContent='Enter your name.';return;}
+ if(!u){$('#signMsg').textContent='No server set — open ⚙.';return;}
+ $('#signMsg').textContent='Signing in…';
+ try{const r=await postForm(u,{action:'login',name:name,pass:pass});
+  if(r&&r.ok){const nm=r.name||name;
+   localStorage.setItem('lingel_supervisor',JSON.stringify({name:nm,at:Date.now()}));
+   localStorage.setItem('lingel_access',JSON.stringify({name:nm,apps:r.apps||[],at:Date.now()}));render();}
+  else{$('#signMsg').textContent='Wrong name or password.';}}
+ catch(e){$('#signMsg').textContent='Could not reach the server — check ⚙.';}}
+$('#whoGo').onclick=doLogin;
+$('#whoInp').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pwInp').focus();});
+$('#pwInp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+$('#logoutBtn').onclick=()=>{localStorage.removeItem('lingel_supervisor');localStorage.removeItem('lingel_access');render();};
+$('#logoBtn').onclick=()=>{const i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas'),s=360/Math.max(im.width,im.height);c.width=im.width*s;c.height=im.height*s;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);localStorage.setItem('lingel_logo',c.toDataURL('image/jpeg',.85));applyLogo();};im.src=rd.result;};rd.readAsDataURL(f);};i.click();};
+render();
+</script>
+<script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
+</body></html>

@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Lingel QR — Box Lookup</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#13161b"><link rel="apple-touch-icon" href="icon.svg"><meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+:root{--bg:#13161b;--panel:#1b2027;--panel2:#20262f;--line:#2b333d;--ink:#eef2f6;--mut:#9aa7b4;--hv:#ffce1f;--ok:#37c871;--bad:#ff5d5d;--warn:#ff9f43}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif}
+.mono{font-family:'JetBrains Mono',monospace}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#161a20,#12151a);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;align-items:center;gap:10px}
+.mark{width:34px;height:34px;border-radius:8px;background:var(--hv);color:#111;display:grid;place-items:center;font-weight:800;overflow:hidden}
+.mark img{width:100%;height:100%;object-fit:contain;background:#fff}
+h1{font-size:15px;margin:0}small{color:var(--mut);font-size:11px}
+.hspace{flex:1}
+.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:13px;cursor:pointer;text-decoration:none}
+.wrap{max-width:640px;margin:0 auto;padding:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+.inp{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:14px 12px;font-size:16px;text-align:center}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:12px 16px;font-weight:800;font-size:14px;cursor:pointer}
+#cam{width:100%;border-radius:12px;display:none;background:#000;margin-top:10px}
+.result{border-radius:14px;padding:16px;text-align:center;border:1px solid var(--line);min-height:80px;display:flex;flex-direction:column;justify-content:center;gap:6px;margin-top:12px}
+.result.ok{background:rgba(55,200,113,.12);border-color:var(--ok)}
+.result.bad{background:rgba(255,93,93,.12);border-color:var(--bad)}
+.result.warn{background:rgba(255,159,67,.12);border-color:var(--warn)}
+.big{font-size:22px;font-weight:800}
+.items{margin-top:10px;text-align:left}
+.it{display:flex;gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:15px}
+.it .q{margin-left:auto;font-size:12px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+.hint{font-size:12px;color:var(--mut)}
+.muted{color:var(--mut)}
+</style></head><body>
+<header><div class="mark" id="mark">L</div>
+<div><h1>QR · Box Lookup</h1><small>Scan a box to see its contents</small></div>
+<div class="hspace"></div><a class="iconbtn" href="qr-hub.html" title="Home">⌂</a></header>
+<div class="wrap">
+ <div class="card">
+  <input class="inp mono" id="scanInp" placeholder="Scan or type a box code…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div style="margin-top:10px"><button class="btn" id="camBtn">📷 Camera scan</button></div>
+  <video id="cam" playsinline muted></video>
+  <div class="result" id="res"><div class="muted">Scan a hardware box QR to see what's inside.</div></div>
+ </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+function applyLogo(){const d=localStorage.getItem('lingel_logo');if(d)$('#mark').innerHTML='<img src="'+d+'">';}
+applyLogo();
+function api(){let a=localStorage.getItem('lingel_qr_api')||'';if(!a){a=(prompt('Paste the Lingel Apps Script /exec URL:')||'').trim();if(a)localStorage.setItem('lingel_qr_api',a);}return a;}
+async function postForm(u,params){const b=new URLSearchParams();Object.keys(params).forEach(k=>b.set(k,params[k]==null?'':params[k]));const r=await fetch(u,{method:'POST',body:b});return r.json().catch(()=>({}));}
+function parseCode(code){code=String(code||'').trim().toUpperCase();
+ let m=code.match(/^L-(.+)-P(\d+)(?:-([A-Z]{2})(\d+))?$/);if(m)return{kind:m[3]?'part':'pos',slug:m[1],idx:m[4]?+m[4]:0,code};
+ m=code.match(/^L-(.+)-HW(\d+)$/);if(m)return{kind:'hw',slug:m[1],idx:+m[2],code};return null;}
+function beep(f){try{const a=new(window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.frequency.value=f;o.connect(g);g.connect(a.destination);g.gain.value=.08;o.start();setTimeout(()=>{o.stop();a.close();},110);}catch(e){}}
+async function lookup(raw){const p=parseCode(raw);const res=$('#res');
+ if(!p){res.className='result bad';res.innerHTML='<div class="big">✕ Not a Lingel QR</div><div class="mono">'+esc(String(raw).slice(0,40))+'</div>';beep(220);return;}
+ if(p.kind!=='hw'){res.className='result warn';res.innerHTML='<div class="big">This is a '+(p.kind==='pos'?'position':'part')+' label</div><div class="hint">Scan a hardware box QR (…-HW01) to see box contents.</div><div class="mono">'+p.code+'</div>';beep(330);return;}
+ const u=api();if(!u){res.className='result bad';res.innerHTML='<div class="big">No server URL set</div>';return;}
+ res.className='result';res.innerHTML='<div class="muted">Looking up '+p.code+'…</div>';
+ try{const r=await postForm(u,{action:'qrBox',code:p.code});const items=(r&&r.items)||[];
+  let list=items.length?('<div class="items">'+items.map(it=>'<div class="it"><span>'+(it.packed?'✅':'⬜')+'</span><span>'+esc(it.item)+'</span><span class="q">x'+esc(String(it.qty))+'</span></div>').join('')+'</div>'):'<div class="hint">No contents recorded for this box yet.</div>';
+  const packed=items.filter(x=>x.packed).length;
+  res.className='result ok';res.innerHTML='<div class="big">📦 Box '+p.idx+'</div><div class="mono">'+p.code+'</div>'+(r.offer?('<div class="hint">Offer '+esc(r.offer)+' · '+packed+'/'+items.length+' packed</div>'):'')+list;beep(660);
+ }catch(e){res.className='result bad';res.innerHTML='<div class="big">Lookup failed</div><div class="hint">Check your connection.</div>';beep(220);}}
+$('#scanInp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lookup($('#scanInp').value);$('#scanInp').value='';}});
+setTimeout(()=>$('#scanInp').focus(),200);
+/* camera */
+let stream=null,raf=null,det=null,last='',lastT=0;
+$('#camBtn').onclick=async()=>{const v=$('#cam');if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;cancelAnimationFrame(raf);v.style.display='none';$('#camBtn').textContent='📷 Camera scan';return;}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});v.srcObject=stream;v.style.display='block';await v.play();$('#camBtn').textContent='■ Stop camera';if('BarcodeDetector'in window)det=new BarcodeDetector({formats:['qr_code']});loop();}
+ catch(e){const r=$('#res');r.className='result bad';r.innerHTML='<div class="big">Camera blocked</div><div class="hint">Allow camera or use a USB scanner.</div>';}};
+async function loop(){const v=$('#cam');if(!stream)return;
+ try{let code=null;if(det){const b=await det.detect(v);if(b.length)code=b[0].rawValue;}
+  else{const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;if(c.width){const x=c.getContext('2d');x.drawImage(v,0,0);const img=x.getImageData(0,0,c.width,c.height),q=jsQR(img.data,c.width,c.height);if(q)code=q.data;}}
+  if(code){const now=Date.now();if(code!==last||now-lastT>1500){last=code;lastT=now;lookup(code);}}}catch(e){}
+ raf=requestAnimationFrame(loop);}
+</script>
+<script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
+</body></html>
