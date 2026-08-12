@@ -286,23 +286,25 @@ function applySystem(pos,key){const s=SYSTEMS.find(x=>x.key===key);pos.system=ke
 /* ---- read part counts from the quoted description text ---- */
 function partsFromText(t){
   t=(t||'').toLowerCase();if(!t)return null;
-  const num=re=>{const m=t.match(re);return m?parseInt(m[1],10):0;};
+  const CAP=10, clamp=n=>(!n||n<0||n>CAP)?0:n;
+  const numBefore=re=>{const m=t.match(re);return m?parseInt(m[1],10):0;};
   const has=re=>re.test(t);
-  let sash=0,glass=0,mesh=0,georgian=0,coupling=0,sys='';
-  const track=num(/(\d+)\s*(?:track|trk)/);
-  const shutter=num(/(\d+)\s*(?:shutter|shutters|panel|panels|leaf|leaves|pane|panes|sash|sashes|vent|vents)/);
-  if(has(/slid|sliding|slider/)){sys=track>=3?'sld3':(has(/door/)?'slddoor':'sld2');sash=shutter||track||2;glass=sash;}
-  else if(has(/fix(ed)?/)&&!has(/openab|casement|shutter|sash|vent|hung/)){sys='fixed';sash=0;glass=num(/(\d+)\s*(?:pane|panes|glass|lite|lites)/)||1;}
-  else if(has(/top[\s-]*hung|top hung/)){sys='th';sash=shutter||1;glass=sash;}
-  else if(has(/openab|casement|caset|side[\s-]*hung/)){sys=has(/door/)?'casedoor':'cw1';sash=shutter||1;glass=sash;}
-  else if(has(/ventilat|louver|louvre/)){sys='vent';sash=1;glass=1;}
-  else{sash=shutter;glass=num(/(\d+)\s*(?:glass|glazing|dgu|lite|lites|pane|panes)/)||shutter||1;}
-  if(has(/mesh|fly\s*mesh|\bnet\b|mosquito|insect/))mesh=num(/(\d+)\s*(?:mesh|net)/)||1;
-  if(has(/georgian|grill|grille|glazing\s*bar|astragal|muntin/))georgian=num(/(\d+)\s*(?:georgian|grill|grille|bar|bars)/)||1;
-  if(has(/coupl|mullion|combinat/))coupling=num(/(\d+)\s*(?:coupl|mullion)/)||1;
+  let sash=0,mesh=0,georgian=0,coupling=0,sys='';
+  const track=clamp(numBefore(/(\d+)\s*(?:track|trk)\b/));
+  const shutter=clamp(numBefore(/(\d+)\s*(?:shutters?|leaf|leaves|vents?)\b/));
+  if(has(/slid|sliding|slider/)){sys=track>=3?'sld3':(has(/door/)?'slddoor':'sld2');sash=shutter||track||2;}
+  else if(has(/fix(ed)?/)&&!has(/openab|casement|hung/)){sys='fixed';sash=0;}
+  else if(has(/top[\s-]*hung|top hung/)){sys='th';sash=shutter||1;}
+  else if(has(/openab|casement|caset|side[\s-]*hung/)){sys=has(/door/)?'casedoor':'cw1';sash=shutter||1;}
+  else if(has(/ventilat|louver|louvre/)){sys='vent';sash=1;}
+  else{sash=shutter||1;}
+  sash=clamp(sash);let glass=sash||1;
+  if(has(/mesh|fly\s*mesh|\bnet\b|mosquito|insect/))mesh=1;
+  if(has(/georgian|grill|grille|glazing\s*bar|astragal|muntin/))georgian=1;
+  if(has(/coupl|mullion/))coupling=1;
   if(!sash&&!glass&&!mesh&&!coupling&&!georgian&&!sys)return null;
-  if(!glass)glass=sash||1;
-  return{sash,glass,mesh,georgian,coupling,sys};
+  return {sash,glass,mesh,georgian,coupling,sys};
+};
 }
 /* ---- order-level hardware box units ---- */
 function hardwareUnits(o){const os=slug(o.offer),out=[];let n=0;
