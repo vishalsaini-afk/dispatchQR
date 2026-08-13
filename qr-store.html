@@ -304,7 +304,6 @@ function partsFromText(t){
   if(has(/coupl|mullion/))coupling=1;
   if(!sash&&!glass&&!mesh&&!coupling&&!georgian&&!sys)return null;
   return {sash,glass,mesh,georgian,coupling,sys};
-};
 }
 /* ---- order-level hardware box units ---- */
 function hardwareUnits(o){const os=slug(o.offer),out=[];let n=0;

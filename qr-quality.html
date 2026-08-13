@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <style>
 :root{
   --bg:#13161b; --panel:#1b2027; --panel2:#20262f; --line:#2b333d;
@@ -323,7 +323,6 @@ function partsFromText(t){
   if(has(/coupl|mullion/))coupling=1;
   if(!sash&&!glass&&!mesh&&!coupling&&!georgian&&!sys)return null;
   return {sash,glass,mesh,georgian,coupling,sys};
-};
 }
 /* ---- order-level hardware box units ---- */
 function hardwareUnits(o){const os=slug(o.offer),out=[];let n=0;
