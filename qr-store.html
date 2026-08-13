@@ -496,14 +496,20 @@ async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=await p
  // merge any local
  S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
  const q=(($('#oSearch')||{}).value||'').trim().toLowerCase();sel.innerHTML='';
+ const ph=el('option',null,'— pick an order —');ph.value='';sel.appendChild(ph);
  list.filter(o=>!q||((o.offer+' '+(o.customer||'')).toLowerCase().indexOf(q)>=0)).forEach(o=>{const op=el('option',null,o.offer+' — '+(o.customer||'—'));op.value=o.offer;sel.appendChild(op);});
- if(!sel.options.length)sel.innerHTML='<option value="">No orders — refresh or add by number</option>';}
+ if(sel.options.length<=1)sel.innerHTML='<option value="">No orders — refresh or add by number</option>';
+ if(cur)sel.value=cur.offer;}
 $('#oSearch').oninput=fillOrders;
 $('#oRefresh').onclick=fillOrders;
-$('#oSel').onchange=async()=>{const off=$('#oSel').value;if(!off)return;luShow('Loading '+off+'…');let o=getDef(off)||await pullOrder(off);
- if(!o){o={offer:off,cust:{name:''},positions:[],hardware:[],bom:[]};}setCur(o);luDone('Loaded '+off);renderHW();renderBOM();};
+async function useOffer(off){if(!off)return;luShow('Loading '+off+'…');
+ let o=getDef(off);if(!o)o={offer:off,cust:{name:''},positions:[],hardware:[],bom:[]};setCur(o);renderHW();renderBOM();
+ try{const srv=await pullOrder(off);if(srv){srv.hardware=srv.hardware||[];srv.bom=srv.bom||[];const i=S.orders.findIndex(x=>x.offer===off);if(i>=0)S.orders[i]=srv;else S.orders.push(srv);cur=srv;S.active=S.orders.findIndex(x=>x.offer===off);save();renderHW();renderBOM();}}catch(e){}
+ luDone('Working on '+off);}
+function need(){if(cur)return true;const off=(($('#oSel')||{}).value)||'';if(off){useOffer(off);return !!cur;}return false;}
+$('#oSel').onchange=()=>{useOffer($('#oSel').value);};
 $('#oManual').onclick=()=>{const off=prompt('Offer number:');if(!off)return;let o=getDef(off)||{offer:off,cust:{name:''},positions:[],hardware:[],bom:[]};setCur(o);renderHW();renderBOM();};
-$('#bomPick').onclick=()=>{if(!cur){alert('Pick an order first');return;}$('#bomFile').click();};
+$('#bomPick').onclick=()=>{if(!need()){alert('Pick an order first');return;}$('#bomFile').click();};
 $('#bomFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!cur){alert('Pick an order first');return;}
  luShow('Reading BOM…');
  try{const items=await parseBOM(f);
@@ -530,7 +536,7 @@ function renderBOM(){const box=$('#bomList');if(!box)return;box.innerHTML='';if(
   const bx=row.querySelector('.bx');if(bx)bx.onchange=e=>{it.box=e.target.value;persist();};
   row.querySelector('.rm').onclick=()=>{cur.bom.splice(i,1);persist();renderBOM();};box.appendChild(row);});
  const packed=cur.bom.filter(x=>x.packed).length;const su=$('#bomSum');if(su)su.textContent=packed+' / '+cur.bom.length+' packed';}
-$('#bomAdd').onclick=()=>{if(!cur){alert('Pick an order first');return;}cur.bom=cur.bom||[];
+$('#bomAdd').onclick=()=>{if(!need()){alert('Pick an order first');return;}cur.bom=cur.bom||[];
  if(!cur.hardware||!cur.hardware.length)cur.hardware=[{label:'Hardware box',qty:1,checked:false}];
  cur.bom.push({item:'',qty:1,box:cur.hardware[0].label,packed:false});persist();renderBOM();};
 async function pushStoreDef(o){const api=apiSilent();if(!api||!o)return;
@@ -551,10 +557,10 @@ function renderHW(){const box=$('#hwList');if(!box)return;if(!cur){box.innerHTML
   row.querySelector('.rm').onclick=()=>{cur.hardware.splice(i,1);persist();renderHW();renderBOM();};box.appendChild(row);});
  if(!cur.hardware.length)box.innerHTML='<div class="hint">No hardware boxes yet — add one below.</div>';}
 function persist(){if(!cur)return;const idx=S.orders.findIndex(x=>x.offer===cur.offer);if(idx>=0)S.orders[idx]=cur;save();pushStoreDef(cur);pushBoxes(cur);}
-$('#hwAdd').onclick=()=>{if(!cur){alert('Pick an order first');return;}cur.hardware=cur.hardware||[];cur.hardware.push({label:'Hardware box '+(cur.hardware.length+1),qty:1,checked:false});persist();renderHW();renderBOM();};
+$('#hwAdd').onclick=()=>{if(!need()){alert('Pick an order first');return;}cur.hardware=cur.hardware||[];cur.hardware.push({label:'Hardware box '+(cur.hardware.length+1),qty:1,checked:false});persist();renderHW();renderBOM();};
 /* stickers */
 function labelEl(code,offer,pt,cust){const d=el('div','lab');d.innerHTML='<div class="q"><img src="'+qrDataURL(code)+'"></div><div class="t"><div class="of">'+esc(offer)+'</div><div class="rf">Hardware</div><span class="pt">'+esc(pt)+'</span><div class="cd">'+code+'</div>'+(cust?'<div class="cu">'+esc(cust)+'</div>':'')+'</div>';return d;}
-function drawSheet(){const area=$('#printArea');if(!area)return;area.innerHTML='';if(!cur){$('#lblCount').textContent='0 stickers';return;}
+function drawSheet(){const area=$('#printArea');if(!area)return;area.innerHTML='';if(!cur)need();if(!cur){$('#lblCount').textContent='0 stickers';return;}
  const cust=((cur.cust&&cur.cust.name)||'').slice(0,22),sheet=el('div','sheet');let n=0;
  hardwareUnits(cur).forEach(u=>{sheet.appendChild(labelEl(u.code,cur.offer,u.partLabel+' '+u.idx,cust));n++;});
  area.appendChild(sheet);$('#lblCount').textContent=n+' stickers';}
