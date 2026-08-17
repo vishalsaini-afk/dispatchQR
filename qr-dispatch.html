@@ -485,14 +485,16 @@ async function addOffer(off){if(!off)return;if(S.truck.offers.indexOf(off)>=0){l
  luShow('Loading '+off+'…');let o=getDef(off)||await pullOrder(off);
  if(!o){luFail('No definition found for '+off+' — has Quality synced it?');return;}
  o.hardware=o.hardware||[];const idx=S.orders.findIndex(x=>x.offer===off);if(idx<0)S.orders.push(o);else S.orders[idx]=o;
- S.truck.offers.push(off);save();await pullStatus(off,false);luDone('Added '+off);renderTruck();}
+ S.truck.offers.push(off);S.truck.colors=S.truck.colors||{};if(!S.truck.colors[off])S.truck.colors[off]=PAL_HEX[(S.truck.offers.length-1)%PAL_HEX.length];save();await pullStatus(off,false);luDone('Added '+off);renderTruck();}
 $('#addOffer').onclick=()=>addOffer($('#oSel').value);
 $('#oManual').onclick=()=>{const off=prompt('Offer number:');if(off)addOffer(off);};
 $('#clearTruck').onclick=()=>{if(confirm('Clear all orders from this truck?')){S.truck.offers=[];save();renderTruck();renderScanStatus();}};
 async function syncTruck(){for(const off of S.truck.offers){await pullStatus(off,false);}}
 function truckUnits(){let a=[];S.truck.offers.forEach(off=>{const o=getDef(off);if(o)a=a.concat(allUnits(o).map(u=>({...u,offer:off})));});return a;}
 function renderTruck(){const chips=$('#truckChips');if(chips){chips.innerHTML=S.truck.offers.length?'':'<span class="hint">No orders on the truck yet.</span>';
-  S.truck.offers.forEach((off,i)=>{const c=el('span','tchip');const o=getDef(off);c.innerHTML='<b>'+esc(off)+'</b> '+(o?allUnits(o).length+'p':'?')+' <span class="x">✕</span>';
+  S.truck.offers.forEach((off,i)=>{const c=el('span','tchip');const o=getDef(off);const col=(S.truck.colors&&S.truck.colors[off])||PAL_HEX[i%PAL_HEX.length];
+   c.innerHTML='<input type="color" class="tcol" value="'+col+'" title="Order colour" style="width:20px;height:20px;border:none;background:none;padding:0;vertical-align:middle;cursor:pointer"> <b>'+esc(off)+'</b> '+(o?allUnits(o).length+'p':'?')+' <span class="x">✕</span>';
+   c.querySelector('.tcol').oninput=e=>{S.truck.colors=S.truck.colors||{};S.truck.colors[off]=e.target.value;save();};
    c.querySelector('.x').onclick=()=>{S.truck.offers.splice(i,1);save();renderTruck();renderScanStatus();};chips.appendChild(c);});}
  const sum=$('#truckSummary');if(sum){if(!S.truck.offers.length){sum.innerHTML='<div class="empty">Add orders above.</div>';return;}
   let html='';S.truck.offers.forEach(off=>{const o=getDef(off);if(!o){html+='<div class="divh">'+esc(off)+' — definition missing</div>';return;}
@@ -522,7 +524,16 @@ function renderScanStatus(){const kv=$('#scanKV');if(!kv)return;const units=truc
  $('#scanRemain').innerHTML=html;}
 $('#scanSync').onclick=async()=>{luShow('Syncing truck…');await syncTruck();await flushScans();renderScanStatus();luDone('Synced');};
 /* report */
-function orderColorMap(offers){const pal=[[255,206,31],[90,169,255],[55,200,113],[255,159,67],[178,132,255],[255,120,180],[120,220,220],[240,180,90]];const m={};offers.forEach((o,i)=>m[o]=pal[i%pal.length]);return m;}
+var PAL_HEX=['#ffce1f','#5aa9ff','#37c871','#ff9f43','#b28cff','#ff78b4','#78dcdc','#f0b45a'];
+function hexToRgb(h){h=String(h||'').replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var n=parseInt(h,16);if(isNaN(n))return [150,150,150];return [(n>>16)&255,(n>>8)&255,n&255];}
+function orderHex(off,i){return (S.truck.colors&&S.truck.colors[off])||PAL_HEX[i%PAL_HEX.length];}
+function orderColorMap(offers){const m={};offers.forEach(function(o,i){m[o]=hexToRgb(orderHex(o,i));});return m;}
+function offerFirstDisp(off){const o=getDef(off);if(!o)return Infinity;let fa=Infinity;allUnits(o).forEach(function(u){const s=ust(u.code);if(s.disp&&s.dispAt&&s.dispAt<fa)fa=s.dispAt;});return fa;}
+function sortedOffers(offers){return (offers||S.truck.offers).slice().sort(function(a,b){return offerFirstDisp(a)-offerFirstDisp(b);});}
+function seqSlots(offers){const arr=[];offers.forEach(function(off){const o=getDef(off);if(!o)return;
+  (o.positions||[]).forEach(function(p){const us=unitsForPosition(o.offer,p);let ld=0,fa=Infinity;us.forEach(function(u){const s=ust(u.code);if(s.disp){ld++;if(s.dispAt&&s.dispAt<fa)fa=s.dispAt;}});arr.push({off:off,label:'P'+pad2(p.no),total:us.length,loaded:ld,firstAt:fa});});
+  hardwareUnits(o).forEach(function(u){const s=ust(u.code);arr.push({off:off,label:'B'+u.idx,total:1,loaded:s.disp?1:0,firstAt:(s.disp&&s.dispAt)?s.dispAt:Infinity});});});
+ arr.sort(function(a,b){return a.firstAt-b.firstAt;});let n=0;arr.forEach(function(s){if(s.loaded>0)s.seq=++n;});return arr;}
 function offerSlots(o){const slots=[];(o.positions||[]).forEach(p=>{const us=unitsForPosition(o.offer,p);let ld=0;us.forEach(u=>{if(ust(u.code).disp)ld++;});slots.push({label:'P'+pad2(p.no),total:us.length,loaded:ld});});
  hardwareUnits(o).forEach(u=>{slots.push({label:'B'+u.idx,total:1,loaded:ust(u.code).disp?1:0});});return slots;}
 const PART_ORDER=[['frame','Frame'],['sash','Sash'],['glass','Glass'],['mesh','Mesh'],['georgian','Georgian'],['coupling','Coupling'],['custom','Other'],['hardware','Hardware']];
@@ -531,27 +542,26 @@ var RPT={dark:[15,18,22],red:[225,29,42],red2:[179,20,31],steel:[74,87,99],mut:[
 function sectHead(doc,P,y,t){doc.setFillColor(RPT.red[0],RPT.red[1],RPT.red[2]);doc.rect(P,y-3.6,1.8,4.6,'F');doc.setTextColor(RPT.steel[0],RPT.steel[1],RPT.steel[2]);doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.text(String(t).toUpperCase(),P+4.6,y);doc.setTextColor(0);doc.setFont('helvetica','normal');return y+3;}
 function metaCell(doc,x,y,l,v){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(RPT.mut[0],RPT.mut[1],RPT.mut[2]);doc.text(String(l).toUpperCase(),x,y);doc.setTextColor(20,24,30);doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text(String(v==null||v===''?'-':v),x,y+5.4);doc.setFont('helvetica','normal');}
 function drawTruck(doc,P,W,y,offers,cmap,highlight){
- const cabW=26,bedX=P+cabW+2,bedW=W-P-bedX,cellW=15,cellH=7,labelH=6,padB=2,GREY=[203,208,214];
- const bands=offers.map(function(off){const o=getDef(off),slots=o?offerSlots(o):[],cols=Math.max(1,Math.floor((bedW-4)/cellW)),rows=Math.max(1,Math.ceil((slots.length||1)/cols));return{off:off,slots:slots,cols:cols,rows:rows,h:labelH+rows*cellH+padB};});
- const bedH=Math.max(26,bands.reduce(function(a,b){return a+b.h;},0)+2);
+ const cabW=24,bedX=P+cabW+2,bedW=W-P-bedX,cellW=15,cellH=9,GREY=[203,208,214];
+ const slots=seqSlots(offers);
+ const cols=Math.max(1,Math.floor((bedW-3)/cellW)),rows=Math.max(1,Math.ceil((slots.length||1)/cols)),bedH=Math.max(24,rows*cellH+6);
  doc.setFillColor(24,27,33);[bedX+12,bedX+bedW*0.55,bedX+bedW-14,P+cabW-7].forEach(function(wx){doc.circle(wx,y+bedH+3,2.6,'F');});
  doc.setFillColor(150,156,164);[bedX+12,bedX+bedW*0.55,bedX+bedW-14,P+cabW-7].forEach(function(wx){doc.circle(wx,y+bedH+3,1,'F');});
- doc.setFillColor(RPT.red[0],RPT.red[1],RPT.red[2]);doc.roundedRect(P,y+bedH*0.34,cabW,bedH*0.66,2,2,'F');
- doc.setFillColor(206,216,224);doc.triangle(P+2.5,y+bedH*0.34,P+cabW-2.5,y+bedH*0.34,P+cabW-2.5,y+bedH*0.12,'F');
- doc.setFillColor(255,240,200);doc.rect(P+cabW-3.4,y+bedH*0.58,3,3.4,'F');
+ doc.setFillColor(RPT.red[0],RPT.red[1],RPT.red[2]);doc.roundedRect(P,y+bedH*0.30,cabW,bedH*0.70,2,2,'F');
+ doc.setFillColor(206,216,224);doc.triangle(P+2.5,y+bedH*0.30,P+cabW-2.5,y+bedH*0.30,P+cabW-2.5,y+bedH*0.10,'F');
+ doc.setFillColor(255,240,200);doc.rect(P+cabW-3.4,y+bedH*0.60,3,3.4,'F');
  doc.setDrawColor(RPT.steel[0],RPT.steel[1],RPT.steel[2]);doc.setLineWidth(0.8);doc.setFillColor(250,251,252);doc.rect(bedX,y,bedW,bedH,'FD');doc.setLineWidth(0.2);
- let by=y+1;
- bands.forEach(function(bd){const hi=!highlight||highlight===bd.off,base=cmap[bd.off]||GREY,col=hi?base:GREY;
-  doc.setFillColor(col[0],col[1],col[2]);doc.rect(bedX+1,by,bedW-2,labelH-1,'F');
-  doc.setTextColor(hi?20:120);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text((highlight&&highlight===bd.off?'> ':'')+'Offer '+bd.off,bedX+3,by+labelH-2);doc.setFont('helvetica','normal');
-  let cy=by+labelH;bd.slots.forEach(function(s,i){const r=Math.floor(i/bd.cols),c=i%bd.cols,x=bedX+2+c*cellW,yy=cy+r*cellH;
-    if(s.total&&s.loaded>=s.total)doc.setFillColor(col[0],col[1],col[2]);
-    else if(s.loaded>0)doc.setFillColor((col[0]+255)/2,(col[1]+255)/2,(col[2]+255)/2);
-    else doc.setFillColor(255,255,255);
-    doc.setDrawColor(hi?170:210);doc.rect(x,yy,cellW-1.5,cellH-1.5,'FD');
-    doc.setTextColor(hi?20:150);doc.setFontSize(5.4);doc.text(String(s.label),x+1,yy+cellH-2.4);});
-  by+=bd.h;});
- doc.setTextColor(0);doc.setDrawColor(0);return y+bedH+9;}
+ doc.setFontSize(5.4);doc.setTextColor(RPT.mut[0],RPT.mut[1],RPT.mut[2]);doc.text('CAB',P+4,y+bedH*0.30-1.4);doc.text('REAR',bedX+bedW-1.5,y+2.6,{align:'right'});
+ slots.forEach(function(s,i){const r=Math.floor(i/cols),c=i%cols,x=bedX+2+c*cellW,yy=y+2+r*cellH;
+  const hi=!highlight||highlight===s.off,base=cmap[s.off]||GREY,col=hi?base:GREY;
+  if(s.total&&s.loaded>=s.total)doc.setFillColor(col[0],col[1],col[2]);
+  else if(s.loaded>0)doc.setFillColor((col[0]+255)/2,(col[1]+255)/2,(col[2]+255)/2);
+  else doc.setFillColor(255,255,255);
+  doc.setDrawColor(hi?150:205);doc.rect(x,yy,cellW-1.5,cellH-2,'FD');
+  doc.setTextColor(hi?20:150);doc.setFont('helvetica','bold');doc.setFontSize(5.4);doc.text(String(s.label),x+1,yy+4);
+  doc.setFont('helvetica','normal');doc.setFontSize(4.4);doc.setTextColor(hi?90:180);doc.text(String(s.off),x+1,yy+cellH-2.4);
+  if(s.seq&&hi){doc.setTextColor(RPT.red[0],RPT.red[1],RPT.red[2]);doc.setFontSize(4.3);doc.text('#'+s.seq,x+cellW-4.6,yy+2.6);}});
+ doc.setFont('helvetica','normal');doc.setTextColor(0);doc.setDrawColor(0);return y+bedH+8;}
 function drawColorLegend(doc,P,W,y,offers,cmap,highlight){doc.setFontSize(7);let x=P;
  offers.forEach(function(off){const col=cmap[off]||[200,200,200];if(x>W-46){x=P;y+=6;}
   doc.setFillColor(col[0],col[1],col[2]);doc.rect(x,y-3,4,4,'F');doc.setTextColor(RPT.steel[0],RPT.steel[1],RPT.steel[2]);
@@ -588,12 +598,12 @@ function buildDoc(opts){opts=opts||{};const {jsPDF}=window.jspdf;const doc=new j
  y+=22;
  y=sectHead(doc,P,y,'Truck loading map');y+=1;
  y=drawTruck(doc,P,W,y+1,S.truck.offers,cmap,opts.onlyOffer||null);
- doc.setFontSize(6.5);doc.setTextColor(RPT.mut[0],RPT.mut[1],RPT.mut[2]);doc.text('Filled = loaded   '+D+'   faint = partly   '+D+'   empty = not loaded'+(opts.onlyOffer?'   '+D+'   highlighted band = this order':''),P,y);doc.setTextColor(0);y+=6;
- y=drawColorLegend(doc,P,W,y,S.truck.offers,cmap,opts.onlyOffer||null);y+=2;
+ doc.setFontSize(6.5);doc.setTextColor(RPT.mut[0],RPT.mut[1],RPT.mut[2]);doc.text('Cab '+String.fromCharCode(8594)+' rear = loading order (first scan nearest cab)   '+D+'   filled = loaded   '+D+'   faint = partly'+(opts.onlyOffer?'   '+D+'   grey = other orders':''),P,y);doc.setTextColor(0);y+=6;
+ y=drawColorLegend(doc,P,W,y,sortedOffers(S.truck.offers),cmap,opts.onlyOffer||null);y+=2;
  if(opts.onlyOffer){const o=getDef(opts.onlyOffer);if(o){if(y>250){doc.addPage();y=16;}y=sectHead(doc,P,y,'Order detail');y+=1;y=orderBlock(doc,P,W,y,o,opts.onlyOffer,G);}}
  else{const all=truckUnits();let dd=0;all.forEach(function(u){if(ust(u.code).disp)dd++;});
   doc.setFillColor(RPT.bar[0],RPT.bar[1],RPT.bar[2]);doc.roundedRect(P,y-4,W-2*P,8,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.setTextColor(255,255,255);doc.text('LOADED',P+4,y+1.4);doc.setTextColor(RPT.red[0],RPT.red[1],RPT.red[2]);doc.text(dd+' / '+all.length,P+28,y+1.4);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(200,206,214);doc.text('parts loaded',P+28+doc.getTextWidth(dd+' / '+all.length)+2.5,y+1.4);doc.setTextColor(0);y+=12;
-  S.truck.offers.forEach(function(off){const o=getDef(off);if(!o)return;if(y>262){doc.addPage();y=16;}y=orderBlock(doc,P,W,y,o,off,G);});}
+  sortedOffers(S.truck.offers).forEach(function(off){const o=getDef(off);if(!o)return;if(y>262){doc.addPage();y=16;}y=orderBlock(doc,P,W,y,o,off,G);});}
  addFooters(doc);return doc;}
 function stamp(){const d=new Date();return d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2);}
 async function up(api,folder,name,doc,results){try{const uri=doc.output('datauristring'),data=uri.slice(uri.indexOf(',')+1);await lingelUpload({api,folder:folder,name:name,mime:'application/pdf',base64:data});results.push({ok:true,name:name});}catch(e){results.push({ok:false,name:name});}}
@@ -640,7 +650,7 @@ async function accessGate(){try{
  const apps=acc.apps||[];if(apps.indexOf('*')>=0||apps.indexOf(APP_KEY)>=0)return true;
  blockScreen('No access to '+APP_NAME,'You are signed in as <b>'+esc(o.name)+'</b>, which is not allowed to use '+APP_NAME+'. Ask an admin to add "'+APP_KEY+'" to your access.');return false;
 }catch(err){return true;}}
-(async()=>{if(!(await accessGate()))return;await openDB('lingel_dispatch');await load();applyLogo();S.units=S.units||{};S.outbox=S.outbox||[];S.orders=S.orders||[];S.truck=S.truck||{vehicle:'',driver:'',offers:[]};S.feed=S.feed||[];S.orders.forEach(o=>o.hardware=o.hardware||[]);renderFeed();updateSyncBadges();flushScans();})();
+(async()=>{if(!(await accessGate()))return;await openDB('lingel_dispatch');await load();applyLogo();S.units=S.units||{};S.outbox=S.outbox||[];S.orders=S.orders||[];S.truck=S.truck||{vehicle:'',driver:'',offers:[]};S.truck.colors=S.truck.colors||{};S.feed=S.feed||[];S.orders.forEach(o=>o.hardware=o.hardware||[]);renderFeed();updateSyncBadges();flushScans();})();
 
 </script>
 <script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
