@@ -585,6 +585,7 @@ function handleScan(raw){const code=norm(raw);if(!code)return;const res=$('#scan
  const pos=hit.posNo?sel.positions[hit.posNo-1]:null;const lbl=hit.partLabel+(hit.part==='frame'?'':' '+hit.idx);const draw=(pos&&pos.drawing)?'<img class="scandraw" src="'+pos.drawing+'">':'';
  res.className='result '+(rej?'bad':'ok');res.innerHTML='<div class="big">'+(rej?'✕ REJECTED':'✓ QC PASS')+'</div><div>'+esc(hit.posRef)+' · '+esc(lbl)+'</div><div class="mono">'+code+'</div>'+draw;
  beep(rej?200:660);if(pos&&pos.drawing)$('#scanRef').innerHTML='<div class="divh">Reference — '+esc(hit.posRef)+'</div><img class="scandraw" src="'+pos.drawing+'">';
+ const rlt=rej?'reject':'pass';S.done=S.done||{};if(S.done[code]===rlt){res.className='result warn';res.innerHTML='<div class="big">Already '+(rej?'rejected':'QC’d')+' ✓</div><div>'+esc(hit.posRef)+' · '+esc(lbl)+'</div><div class="mono">'+code+'</div>';beep(330);return;}S.done[code]=rlt;
  save();queueScan(sel.offer,{code,position:hit.posRef,part:lbl},'qc',rej?'reject':'pass');renderScanStatus();}
 let scanFilter='';
 function renderScanControls(){const sel=$('#scanOrder');if(!sel)return;sel.innerHTML='';if(!S.orders.length){sel.innerHTML='<option value="">No orders</option>';return;}

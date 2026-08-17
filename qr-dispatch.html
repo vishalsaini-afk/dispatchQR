@@ -509,7 +509,7 @@ function handleScan(raw){const p=parseCode(raw);const res=$('#scanResult');
  if(o){const u=allUnits(o).find(x=>x.code===p.code);if(u){name=u.partLabel+(u.part==='frame'?'':' '+u.idx);ref=u.posRef||'';}}
  res.className='result '+(rej?'bad':warn?'warn':'ok');
  res.innerHTML='<div class="big">🚚 LOADED'+(rej?' · was REJECTED!':warn?' · no QC!':'')+'</div><div>'+esc(off)+' · '+esc(ref)+' '+esc(name)+'</div><div class="mono">'+p.code+'</div>';
- beep(rej?200:warn?330:760);save();queueScan(off,{code:p.code,position:ref,part:name},'disp','loaded');pushFeed(p.code,rej?'bad':warn?'warn':'ok','Loaded · '+off);renderScanStatus();}
+ beep(rej?200:warn?330:760);S.done=S.done||{};if(S.done[p.code]==='loaded'){res.className='result warn';res.innerHTML='<div class="big">Already loaded ✓</div><div>'+esc(off)+' · '+esc(ref)+' '+esc(name)+'</div><div class="mono">'+p.code+'</div>';beep(330);pushFeed(p.code,'warn','Already loaded');return;}S.done[p.code]='loaded';save();queueScan(off,{code:p.code,position:ref,part:name},'disp','loaded');pushFeed(p.code,rej?'bad':warn?'warn':'ok','Loaded · '+off);renderScanStatus();}
 function pushFeed(code,kind,txt){S.feed.unshift({code,kind,txt,at:Date.now()});S.feed=S.feed.slice(0,60);save();renderFeed();}
 function renderFeed(){const f=$('#feed');if(!f)return;if(!S.feed.length){f.innerHTML='<div class="empty">No scans yet.</div>';return;}const col={ok:'var(--ok)',bad:'var(--bad)',warn:'var(--warn)'};
  f.innerHTML=S.feed.map(x=>'<div class="f"><span class="dot" style="background:'+(col[x.kind]||'#888')+'"></span><span class="mono" style="flex:0 0 auto">'+new Date(x.at).toLocaleTimeString().slice(0,5)+'</span><span style="flex:1">'+esc(x.txt)+'</span><span class="mono muted" style="font-size:11px">'+x.code+'</span></div>').join('');}
@@ -523,57 +523,63 @@ function renderScanStatus(){const kv=$('#scanKV');if(!kv)return;const units=truc
 $('#scanSync').onclick=async()=>{luShow('Syncing truck…');await syncTruck();await flushScans();renderScanStatus();luDone('Synced');};
 /* report */
 function orderColorMap(offers){const pal=[[255,206,31],[90,169,255],[55,200,113],[255,159,67],[178,132,255],[255,120,180],[120,220,220],[240,180,90]];const m={};offers.forEach((o,i)=>m[o]=pal[i%pal.length]);return m;}
-function truckSlots(){const slots=[];S.truck.offers.forEach(off=>{const o=getDef(off);if(!o)return;
-  (o.positions||[]).forEach(p=>{const us=unitsForPosition(o.offer,p);let ld=0,fa=Infinity;us.forEach(u=>{const s=ust(u.code);if(s.disp){ld++;if(s.dispAt&&s.dispAt<fa)fa=s.dispAt;}});
-    slots.push({label:'P'+pad2(p.no),offer:off,total:us.length,loaded:ld,firstAt:fa});});
-  hardwareUnits(o).forEach(u=>{const s=ust(u.code);slots.push({label:'Box'+u.idx,offer:off,total:1,loaded:s.disp?1:0,firstAt:(s.disp&&s.dispAt)?s.dispAt:Infinity});});});
-  slots.sort((a,b)=>{const al=a.loaded>0?0:1,bl=b.loaded>0?0:1;if(al!==bl)return al-bl;return a.firstAt-b.firstAt;});
-  let n=0;slots.forEach(s=>{if(s.loaded>0)s.loadNo=++n;});return slots;}
-function drawTruck(doc,P,W,y,slots,cmap){
-  const cabW=20,gap=3,bedX=P+cabW+gap,bedW=W-P-bedX,nn=slots.length||1;
-  const cols=Math.max(6,Math.min(12,Math.round(bedW/18))),rows=Math.ceil(nn/cols);
-  const cw=bedW/cols,ch=Math.min(11,Math.max(5,66/rows)),bedH=rows*ch;
-  doc.setFillColor(40);doc.circle(bedX+9,y+bedH+2,1.8,'F');doc.circle(bedX+bedW-9,y+bedH+2,1.8,'F');doc.circle(bedX+bedW-22,y+bedH+2,1.8,'F');
-  doc.setDrawColor(120);doc.setFillColor(225);doc.roundedRect(P,y+Math.max(0,(bedH-16)/2),cabW,16,2,2,'FD');
-  doc.setFontSize(7);doc.setTextColor(90);doc.text('CAB',P+4,y+Math.max(0,(bedH-16)/2)+10);
-  doc.setDrawColor(90);doc.setFillColor(250);doc.rect(bedX,y,bedW,bedH,'FD');
-  slots.forEach((s,i)=>{const r=Math.floor(i/cols),c=i%cols,x=bedX+c*cw,cy=y+r*ch,col=cmap[s.offer]||[200,200,200];
+function offerSlots(o){const slots=[];(o.positions||[]).forEach(p=>{const us=unitsForPosition(o.offer,p);let ld=0;us.forEach(u=>{if(ust(u.code).disp)ld++;});slots.push({label:'P'+pad2(p.no),total:us.length,loaded:ld});});
+ hardwareUnits(o).forEach(u=>{slots.push({label:'B'+u.idx,total:1,loaded:ust(u.code).disp?1:0});});return slots;}
+const PART_ORDER=[['frame','Frame'],['sash','Sash'],['glass','Glass'],['mesh','Mesh'],['georgian','Georgian'],['coupling','Coupling'],['custom','Other'],['hardware','Hardware']];
+function partBreak(o){const agg={};allUnits(o).forEach(u=>{const k=u.part||'part';(agg[k]||(agg[k]={ld:0,t:0}));agg[k].t++;if(ust(u.code).disp)agg[k].ld++;});return agg;}
+function drawTruck(doc,P,W,y,offers,cmap){
+ const G=[22,120,60],cabW=26,bedX=P+cabW+2,bedW=W-P-bedX,cellW=15,cellH=7,labelH=6,padB=2;
+ const bands=offers.map(off=>{const o=getDef(off),slots=o?offerSlots(o):[],cols=Math.max(1,Math.floor((bedW-4)/cellW)),rows=Math.max(1,Math.ceil((slots.length||1)/cols));return{off,slots,cols,rows,h:labelH+rows*cellH+padB};});
+ const bedH=Math.max(26,bands.reduce((a,b)=>a+b.h,0)+2);
+ doc.setFillColor(25,25,25);[bedX+12,bedX+bedW*0.55,bedX+bedW-14,P+cabW-7].forEach(wx=>{doc.circle(wx,y+bedH+3,2.6,'F');});
+ doc.setFillColor(120,120,120);[bedX+12,bedX+bedW*0.55,bedX+bedW-14,P+cabW-7].forEach(wx=>{doc.circle(wx,y+bedH+3,1,'F');});
+ doc.setFillColor(G[0],G[1],G[2]);doc.roundedRect(P,y+bedH*0.34,cabW,bedH*0.66,2,2,'F');
+ doc.setFillColor(205,232,214);doc.triangle(P+2.5,y+bedH*0.34,P+cabW-2.5,y+bedH*0.34,P+cabW-2.5,y+bedH*0.12,'F');
+ doc.setFillColor(255,206,31);doc.rect(P+cabW-3.5,y+bedH*0.58,3.5,4,'F');
+ doc.setDrawColor(G[0],G[1],G[2]);doc.setLineWidth(0.9);doc.setFillColor(248,251,248);doc.rect(bedX,y,bedW,bedH,'FD');doc.setLineWidth(0.2);
+ let by=y+1;
+ bands.forEach(bd=>{const col=cmap[bd.off]||[200,200,200];
+  doc.setFillColor(col[0],col[1],col[2]);doc.rect(bedX+1,by,bedW-2,labelH-1,'F');
+  doc.setTextColor(20);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text('Offer '+bd.off,bedX+3,by+labelH-2);doc.setFont('helvetica','normal');
+  let cy=by+labelH;bd.slots.forEach((s,i)=>{const r=Math.floor(i/bd.cols),c=i%bd.cols,x=bedX+2+c*cellW,yy=cy+r*cellH;
     if(s.total&&s.loaded>=s.total)doc.setFillColor(col[0],col[1],col[2]);
     else if(s.loaded>0)doc.setFillColor((col[0]+255)/2,(col[1]+255)/2,(col[2]+255)/2);
     else doc.setFillColor(255,255,255);
-    doc.setDrawColor(170);doc.rect(x+0.4,cy+0.4,cw-0.8,ch-0.8,'FD');
-    doc.setTextColor(20);doc.setFontSize(cw>15?6:5);doc.text(String(s.label).slice(0,cw>16?6:5),x+1.2,cy+ch-1.8);
-    if(s.loadNo&&cw>13){doc.setFontSize(4.4);doc.setTextColor(90);doc.text(String(s.loadNo),x+cw-3.6,cy+2.8);}});
-  doc.setTextColor(0);return y+bedH+7;}
-function drawLegend(doc,P,W,y,offers,cmap){doc.setFontSize(7);let x=P;
-  offers.forEach(off=>{const o=getDef(off),col=cmap[off]||[200,200,200];const u=o?allUnits(o):[];let ld=0;u.forEach(z=>{if(ust(z.code).disp)ld++;});
-    if(x>W-46){x=P;y+=6;}doc.setFillColor(col[0],col[1],col[2]);doc.rect(x,y-3,4,4,'F');doc.setTextColor(30);
-    const t=off+' '+ld+'/'+u.length;doc.text(t,x+5.5,y);x+=doc.getTextWidth(t)+12;});doc.setTextColor(0);return y+4;}
+    doc.setDrawColor(150);doc.rect(x,yy,cellW-1.5,cellH-1.5,'FD');
+    doc.setTextColor(20);doc.setFontSize(5.4);doc.text(String(s.label),x+1,yy+cellH-2.4);});
+  by+=bd.h;});
+ doc.setTextColor(0);doc.setDrawColor(0);return y+bedH+9;}
 async function makeReport(){if(!S.truck.offers.length){alert('Add orders to the truck first.');return;}
  if(!(window.jspdf&&window.jspdf.jsPDF)){alert('PDF library still loading.');return;}
- const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const P=14,W=210;let y=16;
- const logo=localStorage.getItem('lingel_logo');if(logo){try{doc.addImage(logo,'JPEG',P,y-4,16,16);}catch(e){}}
- doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('DISPATCH REPORT',logo?P+20:P,y+6);y+=16;doc.setFontSize(10);doc.setFont('helvetica','normal');
- doc.text('Vehicle: '+(S.truck.vehicle||'—'),P,y);doc.text(new Date().toLocaleString(),W-P,y,{align:'right'});y+=6;
- doc.text('Driver: '+(S.truck.driver||'—'),P,y);y+=6;doc.text('Orders on truck: '+S.truck.offers.length,P,y);y+=8;
- const cmap=orderColorMap(S.truck.offers);const slots=truckSlots();
- doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('Truck loading map (top view)',P,y);doc.setFont('helvetica','normal');
- y=drawTruck(doc,P,W,y+3,slots,cmap);
- doc.setFontSize(6.5);doc.setTextColor(120);doc.text('Filled = loaded  ·  faint = partly loaded  ·  empty = not loaded  ·  small number = loading order',P,y);doc.setTextColor(0);y+=5;
- y=drawLegend(doc,P,W,y,S.truck.offers,cmap);y+=3;
+ const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const P=14,W=210,G=[22,120,60],Y=[255,206,31];let y=16;
+ doc.setFillColor(G[0],G[1],G[2]);doc.rect(0,0,W,22,'F');
+ const logo=localStorage.getItem('lingel_logo');if(logo){try{doc.addImage(logo,'JPEG',P,3,16,16);}catch(e){}}
+ doc.setTextColor(Y[0],Y[1],Y[2]);doc.setFont('helvetica','bold');doc.setFontSize(17);doc.text('DISPATCH REPORT',logo?P+21:P,13);
+ doc.setTextColor(255,255,255);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text('Lingel Windows & Doors',logo?P+21:P,18.5);
+ doc.setFontSize(8);doc.text(new Date().toLocaleString(),W-P,13,{align:'right'});
+ y=30;doc.setTextColor(0);
+ doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text('Vehicle: '+(S.truck.vehicle||'-'),P,y);doc.setFont('helvetica','normal');doc.text('Driver: '+(S.truck.driver||'-'),W-P,y,{align:'right'});y+=6;
+ doc.text('Orders on truck: '+S.truck.offers.length,P,y);y+=8;
+ const cmap=orderColorMap(S.truck.offers);
+ doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(G[0],G[1],G[2]);doc.text('TRUCK LOADING MAP',P,y);doc.setTextColor(0);doc.setFont('helvetica','normal');y+=2;
+ y=drawTruck(doc,P,W,y+2,S.truck.offers,cmap);
+ doc.setFontSize(6.5);doc.setTextColor(120);doc.text('Filled = loaded   .   faint = partly loaded   .   empty = not loaded',P,y);doc.setTextColor(0);y+=6;
  const all=truckUnits();let d=0;all.forEach(u=>{if(ust(u.code).disp)d++;});
- doc.setDrawColor(200);doc.line(P,y,W-P,y);y+=6;doc.setFont('helvetica','bold');doc.text('Loaded '+d+' / '+all.length+' parts',P,y);y+=8;doc.setFont('helvetica','normal');
- S.truck.offers.forEach(off=>{const o=getDef(off);if(!o)return;if(y>275){doc.addPage();y=16;}const u=allUnits(o);let ld=0;u.forEach(x=>{if(ust(x.code).disp)ld++;});
-  doc.setFont('helvetica','bold');doc.text(off+'  ('+((o.cust&&o.cust.name)||'—')+')  —  '+ld+'/'+u.length+' loaded',P,y);y+=5;doc.setFont('helvetica','normal');doc.setFontSize(8);
-  const nl=u.filter(x=>!ust(x.code).disp);if(nl.length){nl.forEach(x=>{if(y>288){doc.addPage();y=16;}doc.setTextColor(200,0,0);doc.text('NOT LOADED  '+x.code+'  '+(x.posRef||'')+' '+x.partLabel,P+4,y);y+=4;});doc.setTextColor(0);}
+ doc.setFillColor(Y[0],Y[1],Y[2]);doc.rect(P,y-4,W-2*P,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(20);doc.text('LOADED  '+d+' / '+all.length+' parts',P+3,y+1);doc.setTextColor(0);doc.setFont('helvetica','normal');y+=10;
+ S.truck.offers.forEach(off=>{const o=getDef(off);if(!o)return;if(y>262){doc.addPage();y=16;}const u=allUnits(o);let ld=0;u.forEach(x=>{if(ust(x.code).disp)ld++;});
+  doc.setFillColor(G[0],G[1],G[2]);doc.rect(P,y-4,W-2*P,6,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(9);
+  doc.text(off+'   '+((o.cust&&o.cust.name)||'-'),P+3,y);doc.text(ld+'/'+u.length+' loaded',W-P-3,y,{align:'right'});y+=6;doc.setTextColor(0);doc.setFont('helvetica','normal');
+  const ag=partBreak(o);let bl=[];PART_ORDER.forEach(function(kv){if(ag[kv[0]])bl.push(kv[1]+' '+ag[kv[0]].ld+'/'+ag[kv[0]].t);});
+  doc.setFontSize(8);doc.text(bl.join('    .    '),P+4,y);y+=5;
+  const nl=u.filter(x=>!ust(x.code).disp);if(nl.length){nl.forEach(x=>{if(y>288){doc.addPage();y=16;}doc.setTextColor(200,0,0);doc.text('NOT LOADED  '+(x.posRef||'')+'  '+x.partLabel+(x.part==='frame'?'':' '+x.idx),P+4,y);y+=4;});doc.setTextColor(0);}
   else{doc.setTextColor(0,150,0);doc.text('  all loaded',P+4,y);doc.setTextColor(0);y+=4;}
   if((o.hardware||[]).length||(o.bom||[]).length){const boxes=hardwareUnits(o),labels=(o.hardware||[]).map(h=>h.label);
    boxes.forEach(bu=>{if(y>284){doc.addPage();y=16;}const loaded=ust(bu.code).disp;
-    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.text('Box: '+bu.partLabel+' #'+bu.idx+'  ('+(loaded?'loaded':'NOT loaded')+')',P+4,y);y+=4;doc.setFont('helvetica','normal');doc.setFontSize(8);
+    doc.setFontSize(8.5);doc.setFont('helvetica','bold');if(loaded)doc.setTextColor(0,150,0);else doc.setTextColor(0);doc.text('Box: '+bu.partLabel+' #'+bu.idx+'  ('+(loaded?'loaded':'NOT loaded')+')',P+4,y);doc.setTextColor(0);y+=4;doc.setFont('helvetica','normal');doc.setFontSize(8);
     const items=(o.bom||[]).filter(b=>((b.box||labels[0])===bu.partLabel));
     if(items.length)items.forEach(it=>{if(y>288){doc.addPage();y=16;}doc.text((it.packed?'[x] ':'[ ] ')+it.item+'  x'+it.qty,P+8,y);y+=3.6;});
     else{doc.text('  (no BOM items listed)',P+8,y);y+=3.6;}});}
-  doc.setFontSize(10);y+=3;});
+  doc.setFontSize(10);y+=4;});
  const fname='Dispatch_'+slug(S.truck.vehicle||S.truck.offers[0]||'truck')+'.pdf';doc.save(fname);
  const api=luApi();if(!api){luShow('Downloaded. Add API URL to also save to Drive.');setTimeout(luHide,4500);return;}
  luShow('Uploading to Drive…');try{const uri=doc.output('datauristring'),data=uri.slice(uri.indexOf(',')+1);
