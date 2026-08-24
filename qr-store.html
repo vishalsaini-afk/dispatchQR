@@ -151,17 +151,17 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
   .lsheet-page:last-child{page-break-after:auto}
 }
 /* Label sheet geometry — 24-up A4: top 12.5mm, side 6mm, label 64x34mm, pitch 67x34mm, 3 across x 8 down */
-.lsheet-page{width:210mm;height:297mm;box-sizing:border-box;padding:12.5mm 0 0 6mm;background:#fff;margin:0 auto 6px}
+.lsheet-page{width:210mm;height:297mm;box-sizing:border-box;padding:calc(12.5mm + var(--offy,0mm)) 0 0 calc(6mm + var(--offx,0mm));background:#fff;margin:0 auto 6px}
 .lsheet-grid{display:grid;grid-template-columns:repeat(3,64mm);column-gap:3mm;row-gap:0}
 .label{width:64mm;height:34mm;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;gap:2mm;padding:2mm;page-break-inside:avoid;color:#000}
 .label .qr{width:27mm;height:27mm;flex:0 0 auto}
 .label .qr img{width:100%;height:100%;display:block;image-rendering:pixelated}
 .label .txt{flex:1;min-width:0;font-family:Archivo,system-ui,sans-serif}
-.label .c1{display:flex;justify-content:space-between;align-items:baseline;gap:1.5mm;font-weight:800;font-size:9.5pt;line-height:1.06}
-.label .c1 .pl{min-width:0;word-break:break-word}
-.label .frac{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:9.5pt;color:#e11d2a;flex:0 0 auto}
-.label .c2{font-size:7.5pt;color:#222;margin-top:.8mm;line-height:1.12}
-.label .c3{font-family:'JetBrains Mono',monospace;font-size:7pt;color:#111;margin-top:.8mm;word-break:break-all}
+.label .ctop{display:flex;justify-content:space-between;align-items:baseline;gap:1.5mm;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:9pt;color:#111;line-height:1.05}
+.label .ctop .frac{color:#e11d2a;flex:0 0 auto;font-weight:800}
+.label .c1{font-weight:800;font-size:9pt;line-height:1.05;margin-top:.7mm;word-break:break-word}
+.label .c2{font-size:7pt;color:#333;margin-top:.6mm;line-height:1.1}
+.label .c3{font-family:'JetBrains Mono',monospace;font-size:6.5pt;color:#111;margin-top:.6mm;word-break:break-all}
 .hint{font-size:12px;color:var(--mut);line-height:1.5}
 .empty{text-align:center;color:var(--mut);padding:30px 10px}
 .divh{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}
@@ -209,7 +209,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
 <section class="view" id="v-labels">
  <div class="card"><h2>Print hardware stickers</h2>
   <div class="printbar"><button class="btn" id="printBtn">🖨 Print</button><span class="pill hv" id="lblCount">0 stickers</span>
-   <span class="hint">One QR per box · 65×34mm.</span></div></div>
+   <span class="hint">One QR per box · 65×34mm.</span> <span class="hint" style="margin-left:auto">Nudge mm&nbsp; X <input id="offX" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"> &nbsp;Y <input id="offY" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"></span></div></div>
  <div class="card" id="printCard"><div id="printArea"></div></div>
 </section>
 </div>
@@ -576,15 +576,17 @@ function labelEl(code,offer,pt,cust){const d=el('div','lab');d.innerHTML='<div c
 function qrLabel(code){const q=qrcode(0,'M');q.addData(String(code));q.make();return q.createDataURL(6,2);}
 function labelHead(offer,seq,total){return '<div class="lh"><span class="off">'+esc(offer)+'</span>'+((seq&&total)?('<span class="cnt">'+seq+'/'+total+'</span>'):'')+'</div>';}
 function labelEl2(it){const d=el('div','label');
- d.innerHTML='<div class="qr"><img src="'+qrLabel(it.code)+'"></div><div class="txt"><div class="c1"><span class="pl">'+esc(it.label)+'</span>'+(it.ptot?'<span class="frac">'+it.pno+'/'+it.ptot+'</span>':'')+'</div><div class="c2">'+esc(it.offer)+(it.cust?(' · '+esc(it.cust)):'')+'</div><div class="c3">'+esc(it.code)+'</div></div>';
+ d.innerHTML='<div class="qr"><img src="'+qrLabel(it.code)+'"></div><div class="txt"><div class="ctop"><span>'+esc(it.offer)+'</span>'+(it.ptot?'<span class="frac">'+it.pno+'/'+it.ptot+'</span>':'')+'</div><div class="c1">'+esc(it.label)+'</div>'+(it.cust?('<div class="c2">'+esc(it.cust)+'</div>'):'')+'<div class="c3">'+esc(it.code)+'</div></div>';
  return d;}
-function drawSheet(){const area=$('#printArea');if(!area)return;area.innerHTML='';if(!cur)need();if(!cur){$('#lblCount').textContent='0 stickers';return;}
+function drawSheet(){const area=$('#printArea');if(!area)return;area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.innerHTML='';if(!cur)need();if(!cur){$('#lblCount').textContent='0 stickers';return;}
  const cust=((cur.cust&&cur.cust.name)||'').slice(0,22),items=[];
  const boxes=hardwareUnits(cur);boxes.forEach((u,ix)=>items.push({code:u.code,offer:cur.offer,label:u.partLabel+' '+u.idx,cust:cust,pno:ix+1,ptot:boxes.length}));
  if(!items.length){area.innerHTML='<div class="empty">No hardware boxes yet — add boxes on the Pack tab.</div>';$('#lblCount').textContent='0 stickers';return;}
  const PER=24;for(let i=0;i<items.length;i+=PER){const page=el('div','lsheet-page'),grid=el('div','lsheet-grid');items.slice(i,i+PER).forEach(it=>grid.appendChild(labelEl2(it)));page.appendChild(grid);area.appendChild(page);}
  const sheets=Math.ceil(items.length/PER);$('#lblCount').textContent=items.length+' stickers · '+sheets+' sheet'+(sheets>1?'s':'')+' (24/sheet)';}
 $('#printBtn').onclick=()=>window.print();
+function lblOff(k){return parseFloat(localStorage.getItem('lingel_lbl_'+k))||0;}
+if($('#offX')){$('#offX').value=lblOff('offx');$('#offY').value=lblOff('offy');$('#offX').oninput=()=>{localStorage.setItem('lingel_lbl_offx',$('#offX').value||'0');drawSheet();};$('#offY').oninput=()=>{localStorage.setItem('lingel_lbl_offy',$('#offY').value||'0');drawSheet();};}
 window.addEventListener('online',flushScans);
 const APP_KEY='store',APP_NAME='Store';
 function blockScreen(title,msg){document.body.innerHTML='<div style="max-width:520px;margin:56px auto;padding:24px;font-family:Archivo,system-ui,sans-serif;color:#eef2f6;background:#1b2027;border:1px solid #2b333d;border-radius:14px;text-align:center"><div style="width:44px;height:44px;border-radius:10px;background:#ffce1f;color:#111;font-weight:800;display:grid;place-items:center;margin:0 auto 12px">L</div><div style="font-size:20px;font-weight:800;margin-bottom:8px">'+title+'</div><div style="color:#9aa7b4;margin-bottom:18px;line-height:1.5">'+msg+'</div><a href="index.html" style="display:inline-block;background:#ffce1f;color:#111;font-weight:800;padding:12px 18px;border-radius:11px;text-decoration:none">\u2302 Back to hub</a></div>';}
