@@ -1,6 +1,6 @@
 /* Lingel Factory QR service worker — NETWORK-FIRST for our own files
    so a new deploy shows up immediately (cache is only an offline fallback). */
-const C='lingel-factory-qr-v13';
+const C='lingel-factory-qr-v14';
 const CORE=['index.html','./','qr-quality.html','qr-store.html','qr-dispatch.html','qr-box-lookup.html','manifest.webmanifest','icon.svg'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(CORE).catch(()=>{})));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
