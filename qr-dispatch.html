@@ -588,7 +588,7 @@ function orderBlock(doc,P,W,y,o,off,G){const u=allUnits(o);let ld=0;u.forEach(fu
   boxes.forEach(function(bu){if(y>284){doc.addPage();y=16;}const loaded=ust(bu.code).disp;
    doc.setFontSize(8.5);doc.setFont('helvetica','bold');if(loaded)doc.setTextColor(RPT.ok[0],RPT.ok[1],RPT.ok[2]);else doc.setTextColor(RPT.bad[0],RPT.bad[1],RPT.bad[2]);doc.text('Box: '+bu.partLabel+' #'+bu.idx+'  ('+(loaded?'loaded':'NOT loaded')+')',P+4,y);doc.setTextColor(0);y+=4;doc.setFont('helvetica','normal');doc.setFontSize(8);
    const items=(o.bom||[]).filter(function(b){return (b.box||labels[0])===bu.partLabel;});
-   if(items.length)items.forEach(function(it){if(y>288){doc.addPage();y=16;}doc.text((it.packed?'[x] ':'[ ] ')+it.item+'  x'+it.qty,P+8,y);y+=3.6;});
+   if(items.length)items.forEach(function(it){if(y>288){doc.addPage();y=16;}doc.text((it.packed?'[x] ':'[ ] ')+it.item+'  x'+it.qty+(it.unit?(' '+it.unit):''),P+8,y);y+=3.6;});
    else{doc.text('  (no BOM items listed)',P+8,y);y+=3.6;}});}
  return y+5;}
 function addFooters(doc){const D=String.fromCharCode(183),n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setDrawColor(RPT.lineL[0],RPT.lineL[1],RPT.lineL[2]);doc.setLineWidth(0.2);doc.line(14,289,196,289);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(RPT.mut[0],RPT.mut[1],RPT.mut[2]);doc.text('Lingel Windows & Doors   '+D+'   Dispatch report   '+D+'   '+new Date().toLocaleString(),14,292.5);doc.text('Page '+i+' of '+n,196,292.5,{align:'right'});}doc.setTextColor(0);}
@@ -614,6 +614,7 @@ function buildDoc(opts){opts=opts||{};const {jsPDF}=window.jspdf;const doc=new j
   sortedOffers(S.truck.offers).forEach(function(off){const o=getDef(off);if(!o)return;if(y>262){doc.addPage();y=16;}y=orderBlock(doc,P,W,y,o,off,G);});}
  addFooters(doc);return doc;}
 function stamp(){const d=new Date();return d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2);}
+function baseOffer(o){o=String(o||'').trim();var b=o.split('/')[0].trim();return b||o;}
 async function up(api,folder,name,doc,results){try{const uri=doc.output('datauristring'),data=uri.slice(uri.indexOf(',')+1);await lingelUpload({api,folder:folder,name:name,mime:'application/pdf',base64:data});results.push({ok:true,name:name});}catch(e){results.push({ok:false,name:name});}}
 async function makeReport(){if(!S.truck.offers.length){alert('Add orders to the truck first.');return;}
  if(!(window.jspdf&&window.jspdf.jsPDF)){alert('PDF library still loading.');return;}
@@ -626,7 +627,7 @@ async function makeReport(){if(!S.truck.offers.length){alert('Add orders to the 
  await up(api,'Dispatch Trucks',mname,master,results);
  for(let k=0;k<S.truck.offers.length;k++){const off=S.truck.offers[k];const o=getDef(off);if(!o)continue;
   luShow('Saving order reports… '+(k+1)+'/'+S.truck.offers.length);
-  const d=buildDoc({onlyOffer:off});await up(api,off,'Dispatch_'+slug(off)+'_'+stamp()+'.pdf',d,results);}
+  const d=buildDoc({onlyOffer:off});await up(api,baseOffer(off),'Dispatch_'+slug(off)+'_'+stamp()+'.pdf',d,results);}
  const ok=results.filter(function(r){return r.ok;}).length,fail=results.length-ok;
  if(fail)luFail(ok+'/'+total+' saved to Drive - '+fail+' failed, tap Report again when online');
  else luDone('All '+ok+' reports saved (master in "Dispatch Trucks", each order in its folder)');}
