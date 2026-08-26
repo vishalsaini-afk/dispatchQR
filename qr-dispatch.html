@@ -199,12 +199,20 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
 <section class="view" id="v-report">
  <div class="card"><h2>Dispatch report</h2>
   <div class="hint" style="margin-bottom:8px">One PDF for the whole truck (all clubbed orders) — summary, per-order loaded/not-loaded, hardware — downloaded and saved to Drive.</div>
-  <div class="row"><button class="btn" id="reportBtn">⤓ Create dispatch report</button><button class="btn ghost" id="csvBtn">⤓ CSV</button></div></div>
+  <div class="row"><button class="btn" id="reportBtn">⤓ Create dispatch report</button><button class="btn ghost" id="csvBtn">⤓ CSV</button></div>
+  <div class="hint" style="margin:12px 0 6px">After the truck leaves, mark it dispatched — these orders move to the Dispatched list and drop off the Truck / Quality / Store apps.</div>
+  <button class="btn" id="dispatchBtn">✅ Mark truck dispatched</button></div>
+</section>
+<section class="view" id="v-done">
+ <div class="card"><h2>Dispatched orders</h2>
+  <div class="row" style="margin-bottom:8px"><button class="btn ghost" id="doneRefresh">↻ Refresh</button></div>
+  <div id="doneList"><div class="hint">Loading…</div></div></div>
 </section>
 </div>
 <nav><button data-v="truck" class="on"><span class="ic">🚚</span>Truck</button>
 <button data-v="scan"><span class="ic">📷</span>Scan</button>
-<button data-v="report"><span class="ic">📄</span>Report</button></nav>
+<button data-v="report"><span class="ic">📄</span>Report</button>
+<button data-v="done"><span class="ic">✅</span>Dispatched</button></nav>
 <script>
 const LABEL_RE=/^(\d+-\S+|add-\S+)/i;
 const DIM_RE=/(?:^|[;\s])([BHLA])\s*=\s*(\d+(?:[.,]\d+)?)/g;
@@ -471,12 +479,12 @@ function hidInput(id){const si=$(id);if(!si)return;si.addEventListener('keydown'
 
 /* ============ app ============ */
 
-navSetup(v=>{if(v==='truck')fillOrders(),renderTruck();if(v==='scan'){renderScanStatus();updateSyncBadges();syncTruck().then(()=>renderScanStatus());setTimeout(()=>$('#scanInp').focus(),50);}if(v==='report')0;});
+navSetup(v=>{if(v==='truck')fillOrders(),renderTruck();if(v==='scan'){renderScanStatus();updateSyncBadges();syncTruck().then(()=>renderScanStatus());setTimeout(()=>$('#scanInp').focus(),50);}if(v==='report')0;if(v==='done')renderDispatched();});
 setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;
 S.truck=S.truck||{vehicle:'',driver:'',offers:[]};
 $('#veh').value=S.truck.vehicle||'';$('#drv').value=S.truck.driver||'';
 $('#veh').oninput=()=>{S.truck.vehicle=$('#veh').value;save();};$('#drv').oninput=()=>{S.truck.driver=$('#drv').value;save();};
-async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=await pullOrders();S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
+async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=(await pullOrders()).filter(o=>o.status!=='dispatched');S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
  const q=(($('#oSearch')||{}).value||'').trim().toLowerCase();sel.innerHTML='';
  list.filter(o=>!q||((o.offer+' '+(o.customer||'')).toLowerCase().indexOf(q)>=0)).forEach(o=>{const op=el('option',null,o.offer+' — '+(o.customer||'—'));op.value=o.offer;sel.appendChild(op);});
  if(!sel.options.length)sel.innerHTML='<option value="">No orders — refresh or add by number</option>';}
@@ -623,6 +631,19 @@ async function makeReport(){if(!S.truck.offers.length){alert('Add orders to the 
  if(fail)luFail(ok+'/'+total+' saved to Drive - '+fail+' failed, tap Report again when online');
  else luDone('All '+ok+' reports saved (master in "Dispatch Trucks", each order in its folder)');}
 $('#reportBtn').onclick=makeReport;
+async function dispatchTruck(){if(!S.truck.offers.length){alert('No orders on the truck.');return;}
+ if(!confirm('Mark all '+S.truck.offers.length+' order(s) as DISPATCHED?\nThey move to the Dispatched list and drop off the active apps.'))return;
+ const api=apiSilent();luShow('Dispatching…');
+ for(const off of S.truck.offers){const o=getDef(off);try{await postForm(api,{action:'orderStatus',offer:off,status:'dispatched',vehicle:S.truck.vehicle||'',customer:(o&&o.cust&&o.cust.name)||''});}catch(e){}}
+ S.truck={vehicle:'',driver:'',offers:[],colors:{}};save();if($('#veh'))$('#veh').value='';if($('#drv'))$('#drv').value='';renderTruck();luDone('Truck dispatched');}
+$('#dispatchBtn').onclick=dispatchTruck;
+async function renderDispatched(){const box=$('#doneList');if(!box)return;box.innerHTML='<div class="hint">Loading…</div>';
+ let list=(await pullOrders()).filter(o=>o.status==='dispatched').sort((a,b)=>(b.dispatchedAt||0)-(a.dispatchedAt||0));
+ if(!list.length){box.innerHTML='<div class="hint">No dispatched orders yet.</div>';return;}
+ box.innerHTML='';list.forEach(o=>{const d=el('div','tchip');d.style.display='flex';d.style.justifyContent='space-between';d.style.marginBottom='6px';
+  const dt=o.dispatchedAt?new Date(o.dispatchedAt).toLocaleDateString():'';
+  d.innerHTML='<span><b>'+esc(o.offer)+'</b> '+esc(o.customer||'')+'</span><span class="hint">'+esc(o.vehicle||'')+(dt?(' · '+dt):'')+'</span>';box.appendChild(d);});}
+if($('#doneRefresh'))$('#doneRefresh').onclick=renderDispatched;
 $('#csvBtn').onclick=()=>{const rows=[['vehicle','offer','code','part','position','qc','rejected','loaded']];
  truckUnits().forEach(u=>{const s=ust(u.code);rows.push([S.truck.vehicle||'',u.offer,u.code,u.partLabel+(u.part==='frame'?'':' '+u.idx),u.posRef||'',s.qc?1:0,s.qcReject?1:0,s.disp?1:0]);});
  const csv=rows.map(r=>r.map(c=>/[",\n]/.test(''+c)?'"'+(''+c).replace(/"/g,'""')+'"':c).join(',')).join('\n');

@@ -150,6 +150,8 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
   .lsheet-page{page-break-after:always}
   .lsheet-page:last-child{page-break-after:auto}
 }
+.nbtn{width:26px;height:26px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:6px;font-weight:800;font-size:15px;line-height:1;cursor:pointer}
+#printArea.guides .label{outline:.2mm solid #9aa0a6;outline-offset:-.1mm}
 /* Label sheet geometry — 24-up A4: top 12.5mm, side 6mm, label 64x34mm, pitch 67x34mm, 3 across x 8 down */
 .lsheet-page{width:210mm;height:297mm;box-sizing:border-box;padding:calc(12.5mm + var(--offy,0mm)) 0 0 calc(6mm + var(--offx,0mm));background:#fff;margin:0 auto 6px}
 .lsheet-grid{display:grid;grid-template-columns:repeat(3,64mm);column-gap:3mm;row-gap:0}
@@ -211,7 +213,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
    <label class="fld" style="min-width:150px"><span>Include</span><select class="inp" id="lblScope">
     <option value="all">Positions + parts</option><option value="parts">Parts only</option><option value="pos">Positions only</option></select></label></div>
   <div class="printbar"><button class="btn" id="printBtn">🖨 Print</button><span class="pill hv" id="lblCount">0 labels</span>
-   <span class="hint">65×34mm · 3 across · 24/A4.</span> <span class="hint" style="margin-left:auto">Nudge mm&nbsp; X <input id="offX" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"> &nbsp;Y <input id="offY" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"></span></div></div>
+   <span class="hint">65×34mm · 3 across · 24/A4.</span><label class="hint" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-left:12px"><input type="checkbox" id="cutGuides" style="width:16px;height:16px"> Cut/peel guides</label> <span class="hint" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px">Nudge&nbsp;mm&nbsp; L/R <button type="button" class="nbtn" data-k="offx" data-d="-1">−</button><b id="offXv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offx" data-d="1">+</button> &nbsp;U/D <button type="button" class="nbtn" data-k="offy" data-d="-1">−</button><b id="offYv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offy" data-d="1">+</button></span></div></div>
  <div class="card" id="printCard"><div id="printArea"></div></div>
 </section>
 <section class="view" id="v-scan">
@@ -501,9 +503,9 @@ function hidInput(id){const si=$(id);if(!si)return;si.addEventListener('keydown'
 
 /* ============ app ============ */
 
-navSetup(v=>{if(v==='parts')renderParts();if(v==='labels')renderLabels();
+navSetup(v=>{if(v==='parts')renderParts();if(v==='labels'){renderLabels();refreshDispatched();}
   if(v==='scan'){renderScanControls();renderScanStatus();updateSyncBadges();const o=order();if(o)pullStatus(o.offer,false).then(k=>{if(k)renderScanStatus();});flushScans();setTimeout(()=>$('#scanInp').focus(),50);}});
-setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;
+setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;refreshDispatched();
 /* import */
 $('#pick').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#importMsg').textContent='Reading '+f.name+'…';
@@ -522,8 +524,10 @@ $('#manual').onclick=()=>{const offer=prompt('Offer number:');if(offer===null)re
  const o={id:Date.now(),offer:offer||('ORD-'+(S.orders.length+1)),cust:{name,phone:'',addr:''},colour:'',mech:false,hardware:[],
   positions:Array.from({length:nPos},(_,i)=>({no:i+1,ref:'Pos '+(i+1),dims:'',w:0,h:0,mech:false,system:'',spec:'',parts:{frame:1,sash:0,glass:1,mesh:0,georgian:0,coupling:0}}))};
  S.orders.push(o);S.active=S.orders.length-1;save();renderOrders();pushOrder(o);};
+let dispatchedSet=new Set();
+async function refreshDispatched(){try{const l=await pullOrders();dispatchedSet=new Set(l.filter(o=>o.status==='dispatched').map(o=>o.offer));}catch(e){}renderOrders();renderLabels();}
 function renderOrders(){const box=$('#ordersList');if(!box)return;box.innerHTML='';$('#ordersCard').style.display=S.orders.length?'block':'none';
- S.orders.forEach((o,i)=>{const u=allUnits(o);const row=el('div','hwrow');
+ S.orders.forEach((o,i)=>{if(dispatchedSet.has(o.offer))return;const u=allUnits(o);const row=el('div','hwrow');
   const tab=el('div','otab'+(i===S.active?' on':''),'<b>'+esc(o.offer)+'</b><small>'+esc(o.cust.name||'—')+' · '+o.positions.length+' pos · '+u.length+' parts</small>');
   tab.style.flex='1';tab.style.marginBottom='0';tab.onclick=()=>{S.active=i;save();renderOrders();};
   const rm=el('button','rm','Remove');rm.style.width='auto';rm.style.padding='0 12px';
@@ -573,7 +577,7 @@ $('#rereadBtn').onclick=()=>{const o=order();if(!o)return;if(!confirm('Re-read p
  o.positions.forEach(p=>{const pt=partsFromText(p.spec);if(pt){p.system=pt.sys||'';p.parts.sash=pt.sash;p.parts.glass=pt.glass;p.parts.mesh=pt.mesh;p.parts.georgian=pt.georgian;p.parts.coupling=pt.coupling;if(!p.mech)p.parts.frame=1;}});
  save();pushOrder(o);renderParts();};
 /* labels (positions + parts, no hardware) */
-function renderLabels(){const sel=$('#lblOrder');if(!sel)return;sel.innerHTML='';S.orders.forEach((o,i)=>{const op=el('option',null,o.offer+' — '+(o.cust.name||'—'));op.value=i;sel.appendChild(op);});sel.value=S.active;drawSheet();}
+function renderLabels(){const sel=$('#lblOrder');if(!sel)return;sel.innerHTML='';S.orders.forEach((o,i)=>{if(dispatchedSet.has(o.offer))return;const op=el('option',null,o.offer+' — '+(o.cust.name||'—'));op.value=i;sel.appendChild(op);});sel.value=S.active;drawSheet();}
 $('#lblOrder').onchange=()=>{S.active=+$('#lblOrder').value;save();drawSheet();};$('#lblScope').onchange=()=>drawSheet();
 function labelEl(code,offer,ref,pt,cust,isPos){const d=el('div','lab'+(isPos?' pos-lab':''));
  d.innerHTML='<div class="q"><img src="'+qrDataURL(code)+'"></div><div class="t"><div class="of">'+esc(offer)+'</div><div class="rf">'+esc(ref)+'</div><span class="pt">'+esc(pt)+'</span><div class="cd">'+code+'</div>'+(cust?'<div class="cu">'+esc(cust)+'</div>':'')+'</div>';return d;}
@@ -582,7 +586,7 @@ function labelHead(offer,seq,total){return '<div class="lh"><span class="off">'+
 function labelEl2(it){const d=el('div','label');
  d.innerHTML='<div class="qr"><img src="'+qrLabel(it.code)+'"></div><div class="txt"><div class="ctop"><span>'+esc(it.offer)+'</span>'+(it.ptot?'<span class="frac">'+it.pno+'/'+it.ptot+'</span>':'')+'</div><div class="c1">'+esc(it.label)+'</div>'+((it.cust||it.ref)?('<div class="c2">'+[it.cust,it.ref].filter(Boolean).map(esc).join(' · ')+'</div>'):'')+'<div class="c3">'+esc(it.code)+'</div></div>';
  return d;}
-function drawSheet(){const o=S.orders[+$('#lblOrder').value];const area=$('#printArea');area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.innerHTML='';if(!o){$('#lblCount').textContent='0 labels';return;}
+function drawSheet(){const o=S.orders[+$('#lblOrder').value];const area=$('#printArea');area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.classList.toggle('guides',localStorage.getItem('lingel_lbl_guides')!=='0');area.innerHTML='';if(!o){$('#lblCount').textContent='0 labels';return;}
  const scope=$('#lblScope').value,cust=(o.cust.name||'').slice(0,22),items=[];
  o.positions.forEach(p=>{if(scope!=='parts')items.push({code:positionCode(o.offer,p),offer:o.offer,ref:p.ref,label:'POSITION '+p.no,cust:cust});
   if(scope!=='pos'){const us=unitsForPosition(o.offer,p);us.forEach((u,ix)=>items.push({code:u.code,offer:o.offer,ref:p.ref,label:u.partLabel+' '+u.idx,cust:cust,pno:ix+1,ptot:us.length}));}});
@@ -591,7 +595,10 @@ function drawSheet(){const o=S.orders[+$('#lblOrder').value];const area=$('#prin
  const sheets=Math.ceil(items.length/PER);$('#lblCount').textContent=items.length+' labels · '+sheets+' sheet'+(sheets>1?'s':'')+' (24/sheet)';}
 $('#printBtn').onclick=()=>window.print();
 function lblOff(k){return parseFloat(localStorage.getItem('lingel_lbl_'+k))||0;}
-if($('#offX')){$('#offX').value=lblOff('offx');$('#offY').value=lblOff('offy');$('#offX').oninput=()=>{localStorage.setItem('lingel_lbl_offx',$('#offX').value||'0');drawSheet();};$('#offY').oninput=()=>{localStorage.setItem('lingel_lbl_offy',$('#offY').value||'0');drawSheet();};}
+function updateNudgeUI(){const x=$('#offXv'),y=$('#offYv');if(x)x.textContent=lblOff('offx');if(y)y.textContent=lblOff('offy');}
+document.querySelectorAll('.nbtn').forEach(b=>b.onclick=()=>{const k=b.getAttribute('data-k'),d=(+b.getAttribute('data-d'))*0.5;const v=Math.round((lblOff(k)+d)*2)/2;localStorage.setItem('lingel_lbl_'+k,v);updateNudgeUI();
+if($('#cutGuides')){$('#cutGuides').checked=localStorage.getItem('lingel_lbl_guides')!=='0';$('#cutGuides').onchange=()=>{localStorage.setItem('lingel_lbl_guides',$('#cutGuides').checked?'1':'0');drawSheet();};}drawSheet();});
+updateNudgeUI();
 /* QC scan (quality only) */
 function buildIndex(){const map={};S.orders.forEach(o=>{o.positions.forEach(p=>{map[positionCode(o.offer,p)]={type:'pos',offer:o.offer,ref:p.ref,no:p.no};
   unitsForPosition(o.offer,p).forEach(u=>map[u.code]={type:'part',...u,offer:o.offer});});hardwareUnits(o).forEach(u=>map[u.code]={type:'part',...u,offer:o.offer});});return map;}

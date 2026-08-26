@@ -150,6 +150,8 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
   .lsheet-page{page-break-after:always}
   .lsheet-page:last-child{page-break-after:auto}
 }
+.nbtn{width:26px;height:26px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:6px;font-weight:800;font-size:15px;line-height:1;cursor:pointer}
+#printArea.guides .label{outline:.2mm solid #9aa0a6;outline-offset:-.1mm}
 /* Label sheet geometry — 24-up A4: top 12.5mm, side 6mm, label 64x34mm, pitch 67x34mm, 3 across x 8 down */
 .lsheet-page{width:210mm;height:297mm;box-sizing:border-box;padding:calc(12.5mm + var(--offy,0mm)) 0 0 calc(6mm + var(--offx,0mm));background:#fff;margin:0 auto 6px}
 .lsheet-grid{display:grid;grid-template-columns:repeat(3,64mm);column-gap:3mm;row-gap:0}
@@ -209,7 +211,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
 <section class="view" id="v-labels">
  <div class="card"><h2>Print hardware stickers</h2>
   <div class="printbar"><button class="btn" id="printBtn">🖨 Print</button><span class="pill hv" id="lblCount">0 stickers</span>
-   <span class="hint">One QR per box · 65×34mm.</span> <span class="hint" style="margin-left:auto">Nudge mm&nbsp; X <input id="offX" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"> &nbsp;Y <input id="offY" type="number" step="0.5" value="0" style="width:54px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink)"></span></div></div>
+   <span class="hint">One QR per box · 65×34mm.</span><label class="hint" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-left:12px"><input type="checkbox" id="cutGuides" style="width:16px;height:16px"> Cut/peel guides</label> <span class="hint" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px">Nudge&nbsp;mm&nbsp; L/R <button type="button" class="nbtn" data-k="offx" data-d="-1">−</button><b id="offXv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offx" data-d="1">+</button> &nbsp;U/D <button type="button" class="nbtn" data-k="offy" data-d="-1">−</button><b id="offYv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offy" data-d="1">+</button></span></div></div>
  <div class="card" id="printCard"><div id="printArea"></div></div>
 </section>
 </div>
@@ -505,7 +507,7 @@ async function parseBOM(file){const name=(file.name||'').toLowerCase();const buf
 let cur=null; // current order object (from pulled def or manual)
 function setCur(o){o.hardware=o.hardware||[];o.bom=o.bom||[];cur=o;S.active=S.orders.findIndex(x=>x.offer===o.offer);if(S.active<0){S.orders.push(o);S.active=S.orders.length-1;}save();
  const t=$('#hwOffer');if(t)t.textContent=o.offer;$('#oMsg').innerHTML='Working on <b>'+esc(o.offer)+'</b>'+(o.cust&&o.cust.name?(' · '+esc(o.cust.name)):'')+'.';}
-async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=await pullOrders();
+async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=(await pullOrders()).filter(o=>o.status!=='dispatched');
  // merge any local
  S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
  const q=(($('#oSearch')||{}).value||'').trim().toLowerCase();sel.innerHTML='';
@@ -578,7 +580,7 @@ function labelHead(offer,seq,total){return '<div class="lh"><span class="off">'+
 function labelEl2(it){const d=el('div','label');
  d.innerHTML='<div class="qr"><img src="'+qrLabel(it.code)+'"></div><div class="txt"><div class="ctop"><span>'+esc(it.offer)+'</span>'+(it.ptot?'<span class="frac">'+it.pno+'/'+it.ptot+'</span>':'')+'</div><div class="c1">'+esc(it.label)+'</div>'+(it.cust?('<div class="c2">'+esc(it.cust)+'</div>'):'')+'<div class="c3">'+esc(it.code)+'</div></div>';
  return d;}
-function drawSheet(){const area=$('#printArea');if(!area)return;area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.innerHTML='';if(!cur)need();if(!cur){$('#lblCount').textContent='0 stickers';return;}
+function drawSheet(){const area=$('#printArea');if(!area)return;area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.classList.toggle('guides',localStorage.getItem('lingel_lbl_guides')!=='0');area.innerHTML='';if(!cur)need();if(!cur){$('#lblCount').textContent='0 stickers';return;}
  const cust=((cur.cust&&cur.cust.name)||'').slice(0,22),items=[];
  const boxes=hardwareUnits(cur);boxes.forEach((u,ix)=>items.push({code:u.code,offer:cur.offer,label:u.partLabel+' '+u.idx,cust:cust,pno:ix+1,ptot:boxes.length}));
  if(!items.length){area.innerHTML='<div class="empty">No hardware boxes yet — add boxes on the Pack tab.</div>';$('#lblCount').textContent='0 stickers';return;}
@@ -586,7 +588,10 @@ function drawSheet(){const area=$('#printArea');if(!area)return;area.style.setPr
  const sheets=Math.ceil(items.length/PER);$('#lblCount').textContent=items.length+' stickers · '+sheets+' sheet'+(sheets>1?'s':'')+' (24/sheet)';}
 $('#printBtn').onclick=()=>window.print();
 function lblOff(k){return parseFloat(localStorage.getItem('lingel_lbl_'+k))||0;}
-if($('#offX')){$('#offX').value=lblOff('offx');$('#offY').value=lblOff('offy');$('#offX').oninput=()=>{localStorage.setItem('lingel_lbl_offx',$('#offX').value||'0');drawSheet();};$('#offY').oninput=()=>{localStorage.setItem('lingel_lbl_offy',$('#offY').value||'0');drawSheet();};}
+function updateNudgeUI(){const x=$('#offXv'),y=$('#offYv');if(x)x.textContent=lblOff('offx');if(y)y.textContent=lblOff('offy');}
+document.querySelectorAll('.nbtn').forEach(b=>b.onclick=()=>{const k=b.getAttribute('data-k'),d=(+b.getAttribute('data-d'))*0.5;const v=Math.round((lblOff(k)+d)*2)/2;localStorage.setItem('lingel_lbl_'+k,v);updateNudgeUI();
+if($('#cutGuides')){$('#cutGuides').checked=localStorage.getItem('lingel_lbl_guides')!=='0';$('#cutGuides').onchange=()=>{localStorage.setItem('lingel_lbl_guides',$('#cutGuides').checked?'1':'0');drawSheet();};}drawSheet();});
+updateNudgeUI();
 window.addEventListener('online',flushScans);
 const APP_KEY='store',APP_NAME='Store';
 function blockScreen(title,msg){document.body.innerHTML='<div style="max-width:520px;margin:56px auto;padding:24px;font-family:Archivo,system-ui,sans-serif;color:#eef2f6;background:#1b2027;border:1px solid #2b333d;border-radius:14px;text-align:center"><div style="width:44px;height:44px;border-radius:10px;background:#ffce1f;color:#111;font-weight:800;display:grid;place-items:center;margin:0 auto 12px">L</div><div style="font-size:20px;font-weight:800;margin-bottom:8px">'+title+'</div><div style="color:#9aa7b4;margin-bottom:18px;line-height:1.5">'+msg+'</div><a href="index.html" style="display:inline-block;background:#ffce1f;color:#111;font-weight:800;padding:12px 18px;border-radius:11px;text-decoration:none">\u2302 Back to hub</a></div>';}
