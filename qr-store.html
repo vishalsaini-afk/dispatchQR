@@ -486,6 +486,26 @@ function hidInput(id){const si=$(id);if(!si)return;si.addEventListener('keydown'
 
 navSetup(v=>{if(v==='hw'){renderHW();renderBOM();}if(v==='labels')drawSheet();if(v==='orders')fillOrders();});
 setupLogo();
+function bomNum(v){v=String(v==null?'':v).trim();
+ if(/^\d{1,3}(?:\.\d{3})*,\d{1,2}$/.test(v))return parseFloat(v.replace(/\./g,'').replace(',','.'));
+ if(/^\d+,\d{1,2}$/.test(v))return parseFloat(v.replace(',','.'));
+ return parseFloat(v.replace(/[^0-9.]/g,''))||0;}
+function isLingelPacking(txt){return /packing list/i.test(txt)||/lwd\/pd/i.test(txt)||/art\.?-?\s*nr/i.test(txt);}
+function parseLingelPacking(L){
+ const QTY=/(\d+,\d{2})(?!\d)/;
+ const UNIT=/^(meter|metre|mtr|mts|nos|no|pcs?|m)\.?$/i;
+ const noise=t=>/^(order|name|city|total\s*box|packing list|lwd\/|s\.?\s*no|art\.?-?\s*nr|description|quantity|total\s*m\b|packed in|assembled|sign|remark|page|h\/w box)/i.test(t)||/^\d{1,2}\.\d{2}\.\d{4}/.test(t)||/page\s*:/i.test(t);
+ const items=[];let buf='';
+ for(let i=0;i<L.length;i++){let t=(L[i]||'').trim();if(!t)continue;
+  if(noise(t)){buf='';continue;}
+  if(UNIT.test(t)){if(items.length&&items[items.length-1]._await){items[items.length-1].unit=t.toLowerCase();items[items.length-1]._await=false;}continue;}
+  buf=buf?(buf+' '+t):t;
+  const mq=buf.match(QTY);
+  if(mq){const q=mq[1];let name=buf.slice(0,mq.index).trim();let after=buf.slice(mq.index+q.length).trim();
+   let unit='';const um=after.match(UNIT);if(um)unit=after.toLowerCase();
+   const it={item:name,qty:bomNum(q),unit:unit};it._await=!unit;items.push(it);buf='';}}
+ items.forEach(it=>{delete it._await;if(/^(meter|metre|mtr|mts|m)$/.test(it.unit))it.unit='m';else if(/^(nos?|pcs?|no)$/.test(it.unit))it.unit='';});
+ return items;}
 function rowsToItems(rows){if(!rows||!rows.length)return[];let hdr=-1,nameC=-1,qtyC=-1;
  for(let i=0;i<Math.min(rows.length,15);i++){const r=rows[i]||[];let nc=-1,qc=-1;
   r.forEach((c,ci)=>{const s=String(c==null?'':c).toLowerCase();
@@ -494,15 +514,17 @@ function rowsToItems(rows){if(!rows||!rows.length)return[];let hdr=-1,nameC=-1,q
   if(nc>=0&&qc>=0){hdr=i;nameC=nc;qtyC=qc;break;}}
  const items=[],bad=/^(total|sub\s*total|grand\s*total|s\.?\s*no|sr\.?\s*no)/i;
  if(hdr>=0){for(let i=hdr+1;i<rows.length;i++){const r=rows[i]||[];const name=String(r[nameC]==null?'':r[nameC]).trim();
-  if(!name||bad.test(name))continue;let qty=parseFloat(String(r[qtyC]).replace(/[^0-9.]/g,''))||0;if(!qty)qty=1;items.push({item:name,qty});}}
+  if(!name||bad.test(name))continue;let qty=bomNum(r[qtyC]);if(!qty)qty=1;items.push({item:name,qty});}}
  else{for(let i=0;i<rows.length;i++){const r=rows[i]||[];const name=String(r[0]==null?'':r[0]).trim();
   if(!name||bad.test(name)||/desc|item|material|particular/i.test(name))continue;
-  let qty=0;for(let ci=r.length-1;ci>=1;ci--){const v=parseFloat(String(r[ci]).replace(/[^0-9.]/g,''));if(v){qty=v;break;}}
+  let qty=0;for(let ci=r.length-1;ci>=1;ci--){const v=bomNum(r[ci]);if(v){qty=v;break;}}
   if(!qty)qty=1;items.push({item:name,qty});}}
  return items;}
 async function parseBOM(file){const name=(file.name||'').toLowerCase();const buf=await file.arrayBuffer();
  if(/\.(xlsx|xls|csv)$/.test(name)||/sheet|excel|csv/.test(file.type||'')){const wb=XLSX.read(buf,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});return rowsToItems(rows);}
- if(/\.pdf$/.test(name)||/pdf/.test(file.type||'')){const d=await pdfToDoc(file);const rows=d.L.map(x=>x.t.split(/\s{2,}/));return rowsToItems(rows);}
+ if(/\.pdf$/.test(name)||/pdf/.test(file.type||'')){const d=await pdfToDoc(file);const lines=d.L.map(x=>x.t);
+  if(isLingelPacking(lines.join(' ')))return parseLingelPacking(lines);
+  return rowsToItems(lines.map(t=>t.split(/\s{2,}/)));}
  const txt=new TextDecoder().decode(buf);const rows=txt.split(/\r?\n/).map(l=>l.split(/,|\t|\s{2,}/));return rowsToItems(rows);}
 let cur=null; // current order object (from pulled def or manual)
 function setCur(o){o.hardware=o.hardware||[];o.bom=o.bom||[];cur=o;S.active=S.orders.findIndex(x=>x.offer===o.offer);if(S.active<0){S.orders.push(o);S.active=S.orders.length-1;}save();
@@ -530,7 +552,7 @@ $('#bomFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!cur)
  try{const items=await parseBOM(f);
   if(!cur.hardware||!cur.hardware.length)cur.hardware=[{label:'Hardware box',qty:1,checked:false}];
   const box0=cur.hardware[0].label;
-  cur.bom=items.map(it=>({item:it.item,qty:it.qty,box:box0,packed:false}));
+  cur.bom=items.map(it=>({item:it.item,qty:it.qty,unit:it.unit||'',box:box0,packed:false}));
   persist();renderHW();renderBOM();luDone(items.length+' items read — tick what you pack');
   const api=apiSilent();if(api){const rd=new FileReader();rd.onload=async()=>{const uri=rd.result,data=uri.slice(uri.indexOf(',')+1);
    try{await lingelUpload({api,folder:cur.offer,name:'BOM_'+slug(cur.offer)+'_'+f.name,mime:f.type||'application/octet-stream',base64:data});}catch(x){}};rd.readAsDataURL(f);}
@@ -542,12 +564,12 @@ function renderBOM(){const box=$('#bomList');if(!box)return;box.innerHTML='';if(
  cur.bom.forEach((it,i)=>{const row=el('div','hwrow');const packed=!!it.packed;
   row.innerHTML='<button class="tick" style="width:38px;height:38px;flex:0 0 auto;border-radius:8px;border:1px solid var(--line);font-weight:800;cursor:pointer;background:'+(packed?'var(--ok)':'var(--panel2)')+';color:'+(packed?'#111':'var(--bad)')+'">'+(packed?'✓':'✗')+'</button>'+
    '<input class="inp itm" value="'+esc(it.item||'').replace(/"/g,'&quot;')+'" placeholder="Material">'+
-   '<input class="inp qc" type="number" inputmode="numeric" min="0" value="'+(it.qty|0)+'" style="max-width:60px">'+
+   '<input class="inp qc" type="number" inputmode="decimal" step="any" min="0" value="'+(Number(it.qty)||0)+'" style="max-width:64px">'+(it.unit?('<span class="hint" style="align-self:center">'+esc(it.unit)+'</span>'):'')+
    (labels.length>1?('<select class="inp bx" style="max-width:118px">'+labels.map(l=>'<option'+(it.box===l?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'):'')+
    '<button class="rm">✕</button>';
   row.querySelector('.tick').onclick=()=>{it.packed=!it.packed;persist();renderBOM();};
   row.querySelector('.itm').onchange=e=>{it.item=e.target.value;persist();};
-  row.querySelector('.qc').onchange=e=>{it.qty=Math.max(0,parseInt(e.target.value||'0',10));persist();};
+  row.querySelector('.qc').onchange=e=>{it.qty=Math.max(0,parseFloat(e.target.value||'0')||0);persist();};
   const bx=row.querySelector('.bx');if(bx)bx.onchange=e=>{it.box=e.target.value;persist();};
   row.querySelector('.rm').onclick=()=>{cur.bom.splice(i,1);persist();renderBOM();};box.appendChild(row);});
  const packed=cur.bom.filter(x=>x.packed).length;const su=$('#bomSum');if(su)su.textContent=packed+' / '+cur.bom.length+' packed';}
