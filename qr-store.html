@@ -520,6 +520,7 @@ function rowsToItems(rows){if(!rows||!rows.length)return[];let hdr=-1,nameC=-1,q
   let qty=0;for(let ci=r.length-1;ci>=1;ci--){const v=bomNum(r[ci]);if(v){qty=v;break;}}
   if(!qty)qty=1;items.push({item:name,qty});}}
  return items;}
+function baseOffer(o){o=String(o||'').trim();var b=o.split('/')[0].trim();return b||o;}
 async function parseBOM(file){const name=(file.name||'').toLowerCase();const buf=await file.arrayBuffer();
  if(/\.(xlsx|xls|csv)$/.test(name)||/sheet|excel|csv/.test(file.type||'')){const wb=XLSX.read(buf,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});return rowsToItems(rows);}
  if(/\.pdf$/.test(name)||/pdf/.test(file.type||'')){const d=await pdfToDoc(file);const lines=d.L.map(x=>x.t);
@@ -554,8 +555,6 @@ $('#bomFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!cur)
   const box0=cur.hardware[0].label;
   cur.bom=items.map(it=>({item:it.item,qty:it.qty,unit:it.unit||'',box:box0,packed:false}));
   persist();renderHW();renderBOM();luDone(items.length+' items read — tick what you pack');
-  const api=apiSilent();if(api){const rd=new FileReader();rd.onload=async()=>{const uri=rd.result,data=uri.slice(uri.indexOf(',')+1);
-   try{await lingelUpload({api,folder:cur.offer,name:'BOM_'+slug(cur.offer)+'_'+f.name,mime:f.type||'application/octet-stream',base64:data});}catch(x){}};rd.readAsDataURL(f);}
  }catch(err){luFail('Could not read BOM: '+err.message);}
  e.target.value='';};
 function renderBOM(){const box=$('#bomList');if(!box)return;box.innerHTML='';if(!cur)return;cur.bom=cur.bom||[];
