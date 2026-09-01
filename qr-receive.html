@@ -175,18 +175,13 @@ function renderReport(){const out=$('#repOut');if(!sel.length){out.innerHTML='<d
   html+='</table>';});
  out.innerHTML=html;}
 $('#repView').onclick=async()=>{$('#repOut').innerHTML='<div class="hint" style="margin-top:10px">Loading…</div>';await refreshAll();renderReport();};
-async function makeReport(){if(!sel.length){alert('Add at least one order on the Receive scan tab.');return;}
- if(!(window.jspdf&&window.jspdf.jsPDF)){alert('PDF library still loading, try again.');return;}
- await refreshAll();
- const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const P=14,W=210;let y=18;
+function buildRecvDoc(offers){const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const P=14,W=210;let y=18;
  doc.setFillColor(15,18,22);doc.rect(0,0,W,20,'F');
  const logo=localStorage.getItem('lingel_logo');if(logo){try{doc.addImage(logo,'JPEG',P,3,14,14);}catch(e){}}
  doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(255,255,255);doc.text('SITE RECEIVING REPORT',logo?P+18:P,12);
  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(150,158,168);doc.text(new Date().toLocaleString(),W-P,12,{align:'right'});
- y=27;doc.setTextColor(0);doc.setFontSize(9);doc.text('Received by: '+(receiver()||'-')+'    Orders: '+sel.length,P,y);y+=7;
- const logRows=[];
- sel.forEach(off=>{const grp=reportRows(off);let sent=0,recd=0,made=0;Object.keys(grp).forEach(k=>{sent+=grp[k].sent;recd+=grp[k].recd;made+=grp[k].made;});
-  logRows.push({offer:off,made:made,sent:sent,recd:recd,receiver:receiver()});
+ y=27;doc.setTextColor(0);doc.setFontSize(9);doc.text('Received by: '+(receiver()||'-')+'    Orders: '+offers.length,P,y);y+=7;
+ offers.forEach(off=>{const grp=reportRows(off);let sent=0,recd=0,made=0;Object.keys(grp).forEach(k=>{sent+=grp[k].sent;recd+=grp[k].recd;made+=grp[k].made;});
   if(y>262){doc.addPage();y=16;}
   doc.setFillColor(27,32,40);doc.roundedRect(P,y-4,W-2*P,6.4,1.4,1.4,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text(off,P+3,y);
   if(recd>=(sent||made)&&(sent||made)>0)doc.setTextColor(55,200,113);else doc.setTextColor(255,180,60);doc.text('received '+recd+' / sent '+(sent||made),W-P-3,y,{align:'right'});y+=7;doc.setTextColor(0);doc.setFont('helvetica','normal');
@@ -198,13 +193,19 @@ async function makeReport(){if(!sel.length){alert('Add at least one order on the
     if(st.c==='ok')doc.setTextColor(0,150,0);else if(st.c==='bad2')doc.setTextColor(200,0,0);else doc.setTextColor(200,140,0);doc.text(st.t,x+1.5,y);
     doc.setDrawColor(222,226,230);doc.setLineWidth(0.12);doc.line(P,y+1.4,W-P,y+1.4);y+=5;});
   y+=4;});
- doc.setDrawColor(222,226,230);doc.setLineWidth(0.2);doc.line(P,289,W-P,289);doc.setFontSize(7);doc.setTextColor(150,158,168);doc.text('Lingel Windows & Doors  ·  Site receiving  ·  '+new Date().toLocaleString(),P,292.5);
- const fname='Receiving_'+baseOffer(sel[0])+'_'+stamp()+'.pdf';doc.save(fname);
- // best-effort upload to each order's base folder
- const u=api();let url='';if(u){try{const uri=doc.output('datauristring'),data=uri.slice(uri.indexOf(',')+1);const seen={};
-   for(const off of sel){const b=baseOffer(off);if(seen[b])continue;seen[b]=1;const rr=await postForm(u,{action:'upload',folder:b,name:fname,mime:'application/pdf',base64:data});if(rr&&rr.url&&!url)url=rr.url;}
-   await postForm(u,{action:'recvReport',rows:JSON.stringify(logRows),url:url,receiver:receiver()});
-  }catch(e){}}
+ doc.setDrawColor(222,226,230);doc.setLineWidth(0.2);doc.line(P,289,W-P,289);doc.setFontSize(7);doc.setTextColor(150,158,168);doc.text('Lingel Windows & Doors  \u00b7  Site receiving  \u00b7  '+new Date().toLocaleString(),P,292.5);
+ return doc;}
+async function makeReport(){if(!sel.length){alert('Add at least one order on the Receive scan tab.');return;}
+ if(!(window.jspdf&&window.jspdf.jsPDF)){alert('PDF library still loading, try again.');return;}
+ await refreshAll();
+ buildRecvDoc(sel).save('Receiving_'+slugify(sel[0])+'_'+stamp()+(sel.length>1?'_all':'')+'.pdf'); // operator's combined copy
+ const u=apiSilent();const logRows=[];
+ for(const off of sel){const grp=reportRows(off);let sent=0,recd=0,made=0;Object.keys(grp).forEach(k=>{sent+=grp[k].sent;recd+=grp[k].recd;made+=grp[k].made;});
+  let url='';
+  if(u){try{const doc=buildRecvDoc([off]);const uri=doc.output('datauristring'),data=uri.slice(uri.indexOf(',')+1);
+    const rr=await postForm(u,{action:'upload',folder:baseOffer(off),name:'Receiving_'+slugify(off)+'_'+stamp()+'.pdf',mime:'application/pdf',base64:data});if(rr&&rr.url)url=rr.url;}catch(e){}}
+  logRows.push({offer:off,made:made,sent:sent,recd:recd,receiver:receiver(),url:url});}
+ if(u){try{await postForm(u,{action:'recvReport',rows:JSON.stringify(logRows),receiver:receiver()});}catch(e){}}
  renderReport();}
 $('#repBtn').onclick=makeReport;
 
