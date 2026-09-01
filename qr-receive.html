@@ -88,6 +88,24 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;',
 function applyLogo(){const d=localStorage.getItem('lingel_logo');if(d)$('#mark').innerHTML='<img src="'+d+'">';}
 applyLogo();
 function api(){let a=localStorage.getItem('lingel_qr_api')||'';if(!a){a=(prompt('Paste the Lingel Apps Script /exec URL:')||'').trim();if(a)localStorage.setItem('lingel_qr_api',a);}return a;}
+function apiSilent(){return localStorage.getItem('lingel_qr_api')||'';}
+function superObj(){try{const v=localStorage.getItem('lingel_supervisor');if(!v)return null;return v.charAt(0)==='{'?JSON.parse(v):{name:v};}catch(e){return {name:String(localStorage.getItem('lingel_supervisor')||'')};}}
+function superName(){const o=superObj();return o&&o.name?o.name:'';}
+const APP_KEY='site',APP_NAME='Site Receiving';
+function blockScreen(title,msg){document.body.innerHTML='<div style="max-width:520px;margin:56px auto;padding:24px;font-family:Archivo,system-ui,sans-serif;color:#eef2f6;background:#1b2027;border:1px solid #2b333d;border-radius:14px;text-align:center"><div style="width:44px;height:44px;border-radius:10px;background:#ffce1f;color:#111;font-weight:800;display:grid;place-items:center;margin:0 auto 12px">L</div><div style="font-size:20px;font-weight:800;margin-bottom:8px">'+title+'</div><div style="color:#9aa7b4;margin-bottom:18px;line-height:1.5">'+msg+'</div><a href="index.html" style="display:inline-block;background:#ffce1f;color:#111;font-weight:800;padding:12px 18px;border-radius:11px;text-decoration:none">\u2302 Back to hub</a></div>';}
+async function accessGate(){try{
+ const o=superObj();
+ if(!o||!o.name){blockScreen('Please sign in','Open the factory hub and sign in, then reopen '+APP_NAME+'.');return false;}
+ const u=apiSilent();
+ let acc=null;try{acc=JSON.parse(localStorage.getItem('lingel_access')||'null');}catch(e){}
+ const ok=a=>a&&a.name===o.name&&((a.apps||[]).indexOf('*')>=0||(a.apps||[]).indexOf(APP_KEY)>=0);
+ if(!u)return true;
+ if(ok(acc)){postForm(u,{action:'access',name:o.name}).then(function(r){if(r&&r.ok)localStorage.setItem('lingel_access',JSON.stringify({name:o.name,apps:r.apps||[],at:Date.now()}));}).catch(function(){});return true;}
+ try{const r=await postForm(u,{action:'access',name:o.name});if(r&&r.ok){acc={name:o.name,apps:r.apps||[],at:Date.now()};localStorage.setItem('lingel_access',JSON.stringify(acc));}}catch(e){}
+ if(!acc||acc.name!==o.name){if(!navigator.onLine)return true;blockScreen('Access not verified','Could not check your permissions. Connect once and reopen '+APP_NAME+'.');return false;}
+ const apps=acc.apps||[];if(apps.indexOf('*')>=0||apps.indexOf(APP_KEY)>=0)return true;
+ blockScreen('No access to '+APP_NAME,'You are signed in as <b>'+esc(o.name)+'</b>, which is not allowed to use '+APP_NAME+'. Ask an admin to add "'+APP_KEY+'" to your access.');return false;
+}catch(err){return true;}}
 async function postForm(u,params){const b=new URLSearchParams();Object.keys(params).forEach(k=>b.set(k,params[k]==null?'':params[k]));const ctl=new AbortController();const to=setTimeout(function(){ctl.abort();},12000);try{const r=await fetch(u,{method:'POST',body:b,signal:ctl.signal});return await r.json().catch(function(){return {};});}catch(e){return {};}finally{clearTimeout(to);}}
 function parseCode(code){code=String(code||'').trim().toUpperCase();
  let m=code.match(/^L-(.+)-P(\d+)(?:-([A-Z]{2})(\d+))?$/);if(m)return{kind:m[3]?'part':'pos',slug:m[1],pos:+m[2],xx:m[3]||'',idx:m[4]?+m[4]:0,code};
@@ -98,10 +116,10 @@ function partName(p){if(p.kind==='hw')return 'Hardware box '+p.idx;if(p.kind==='
 function slugify(o){return String(o||'').toUpperCase().replace(/[^0-9A-Z]+/g,'-').replace(/^-|-$/g,'');}
 function baseOffer(o){o=String(o||'').trim();var b=o.split('/')[0].trim();return b||o;}
 function stamp(){var d=new Date();return d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2);}
-function receiver(){return ($('#recv').value||'').trim()||localStorage.getItem('lingel_receiver')||'';}
+function receiver(){return superName()||($('#recv').value||'').trim()||localStorage.getItem('lingel_receiver')||'';}
 function dev(){let d=localStorage.getItem('lingel_device');if(!d){d=Math.random().toString(36).slice(2,8);localStorage.setItem('lingel_device',d);}return d;}
 
-$('#recv').value=localStorage.getItem('lingel_receiver')||'';
+$('#recv').value=superName()||localStorage.getItem('lingel_receiver')||'';if(superName())$('#recv').readOnly=true;
 $('#recv').onchange=()=>localStorage.setItem('lingel_receiver',receiver());
 
 /* ---- selected orders + expected units ---- */
@@ -205,7 +223,7 @@ async function loop(){const v=$('#cam');if(!stream)return;
   if(code){const now=Date.now();if(code!==last||now-lastT>1500){last=code;lastT=now;receive(code);}}}catch(e){}
  raf=requestAnimationFrame(loop);}
 /* boot */
-(async()=>{await loadOrders();for(const o of sel)await loadExpected(o);renderSel();setTimeout(()=>$('#scanInp').focus(),200);})();
+(async()=>{if(!(await accessGate()))return;await loadOrders();for(const o of sel)await loadExpected(o);renderSel();setTimeout(()=>$('#scanInp').focus(),200);})();
 </script>
 <script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body></html>
