@@ -216,7 +216,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
  <div class="card"><h2>Print QR labels</h2>
   <div class="lblhead"><label class="fld" style="flex:1;min-width:180px"><span>Order</span><select class="inp" id="lblOrder"></select></label>
    <label class="fld" style="min-width:150px"><span>Include</span><select class="inp" id="lblScope">
-    <option value="all">Positions + parts</option><option value="parts">Parts only</option><option value="pos">Positions only</option></select></label></div>
+    <option value="all">Positions + parts</option><option value="parts">Parts only</option><option value="glass">Glass only</option><option value="pos">Positions only</option></select></label></div>
   <div class="printbar"><button class="btn" id="printBtn">🖨 Print</button><span class="pill hv" id="lblCount">0 labels</span>
    <span class="hint">65×34mm · 3 across · 24/A4.</span><label class="hint" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;margin-left:12px"><input type="checkbox" id="cutGuides" style="width:16px;height:16px"> Cut/peel guides</label> <span class="hint" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px">Nudge&nbsp;mm&nbsp; L/R <button type="button" class="nbtn" data-k="offx" data-d="-1">−</button><b id="offXv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offx" data-d="1">+</button> &nbsp;U/D <button type="button" class="nbtn" data-k="offy" data-d="-1">−</button><b id="offYv" style="min-width:26px;display:inline-block;text-align:center">0</b><button type="button" class="nbtn" data-k="offy" data-d="1">+</button></span></div></div>
  <div class="card" id="printCard"><div id="printArea"></div></div>
@@ -529,15 +529,20 @@ $('#manual').onclick=()=>{const offer=prompt('Offer number:');if(offer===null)re
  const o={id:Date.now(),offer:offer||('ORD-'+(S.orders.length+1)),cust:{name,phone:'',addr:''},colour:'',mech:false,hardware:[],
   positions:Array.from({length:nPos},(_,i)=>({no:i+1,ref:'Pos '+(i+1),dims:'',w:0,h:0,mech:false,system:'',spec:'',parts:{frame:1,sash:0,glass:1,mesh:0,georgian:0,coupling:0}}))};
  S.orders.push(o);S.active=S.orders.length-1;save();renderOrders();pushOrder(o);};
-let dispatchedSet=new Set();
-async function refreshDispatched(){try{const l=await pullOrders();dispatchedSet=new Set(l.filter(o=>o.status==='dispatched').map(o=>o.offer));}catch(e){}renderOrders();renderLabels();}
+let dispatchedSet=new Set();let statusMap={};
+async function refreshDispatched(){try{const l=await pullOrders();dispatchedSet=new Set();statusMap={};l.forEach(o=>{statusMap[o.offer]=o.status||'';if(o.status==='dispatched')dispatchedSet.add(o.offer);});}catch(e){}renderOrders();renderLabels();}
+async function sendToDispatch(offer,silent){const u=apiSilent();if(!u)return;const o=S.orders.find(x=>x.offer===offer);try{await postForm(u,{action:'orderStatus',offer:offer,status:'qc',customer:(o&&o.cust&&o.cust.name)||''});}catch(e){}statusMap[offer]='qc';if(!silent){renderOrders();}}
+function maybeQcDone(offer){const o=S.orders.find(x=>x.offer===offer);if(!o)return;if(statusMap[offer]==='qc'||statusMap[offer]==='dispatched')return;const us=allUnits(o);if(us.length&&us.every(x=>ust(x.code).qc)){sendToDispatch(offer,true);}}
 function renderOrders(){const box=$('#ordersList');if(!box)return;box.innerHTML='';$('#ordersCard').style.display=S.orders.length?'block':'none';
  S.orders.forEach((o,i)=>{if(dispatchedSet.has(o.offer))return;const u=allUnits(o);const row=el('div','hwrow');
   const tab=el('div','otab'+(i===S.active?' on':''),'<b>'+esc(o.offer)+'</b><small>'+esc(o.cust.name||'—')+' · '+o.positions.length+' pos · '+u.length+' parts</small>');
   tab.style.flex='1';tab.style.marginBottom='0';tab.onclick=()=>{S.active=i;save();renderOrders();};
+  const stt=statusMap[o.offer]||'';
+  if(stt==='qc'){const b=el('span','pill','✓ Sent to Dispatch');b.style.cssText='align-self:center;background:rgba(55,200,113,.15);color:var(--ok);border:1px solid var(--ok);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:800;white-space:nowrap';row.appendChild(tab);row.appendChild(b);}
+  else{const send=el('button','btn','QC done → Dispatch');send.style.cssText='width:auto;padding:0 12px;background:var(--hv);color:#111;border-color:var(--hv);font-weight:800;white-space:nowrap';send.onclick=async()=>{send.textContent='…';await sendToDispatch(o.offer);};row.appendChild(tab);row.appendChild(send);}
   const rm=el('button','rm','Remove');rm.style.width='auto';rm.style.padding='0 12px';
   rm.onclick=()=>{if(!confirm('Remove '+o.offer+'?'))return;const off=o.offer;S.orders.splice(i,1);if(S.active>=S.orders.length)S.active=Math.max(0,S.orders.length-1);save();delOrderRemote(off);renderOrders();};
-  row.appendChild(tab);row.appendChild(rm);box.appendChild(row);});}
+  row.appendChild(rm);box.appendChild(row);});}
 function renderTabs(host){if(!host)return;host.innerHTML='';S.orders.forEach((o,i)=>{const u=allUnits(o);
   const d=el('div','otab'+(i===S.active?' on':''),'<b>'+esc(o.offer)+'</b><small>'+o.positions.length+' pos · '+u.length+' parts</small>');
   d.onclick=()=>{S.active=i;save();renderParts();};host.appendChild(d);});}
@@ -593,8 +598,9 @@ function labelEl2(it){const d=el('div','label');
  return d;}
 function drawSheet(){const o=S.orders[+$('#lblOrder').value];const area=$('#printArea');area.style.setProperty('--offx',lblOff('offx')+'mm');area.style.setProperty('--offy',lblOff('offy')+'mm');area.classList.toggle('guides',localStorage.getItem('lingel_lbl_guides')!=='0');area.innerHTML='';if(!o){$('#lblCount').textContent='0 labels';return;}
  const scope=$('#lblScope').value,cust=(o.cust.name||'').slice(0,22),items=[];
- o.positions.forEach(p=>{if(scope!=='parts')items.push({code:positionCode(o.offer,p),offer:o.offer,ref:p.ref,label:'POSITION '+p.no,cust:cust});
-  if(scope!=='pos'){const us=unitsForPosition(o.offer,p);us.forEach((u,ix)=>items.push({code:u.code,offer:o.offer,ref:p.ref,label:u.partLabel+' '+u.idx,cust:cust,pno:ix+1,ptot:us.length}));}});
+ const isGlass=u=>/-GL\d+$/i.test(u.code)||u.part==='glass'||/glass/i.test(u.partLabel||'');
+ o.positions.forEach(p=>{if(scope==='all'||scope==='pos')items.push({code:positionCode(o.offer,p),offer:o.offer,ref:p.ref,label:'POSITION '+p.no,cust:cust});
+  if(scope!=='pos'){const us=unitsForPosition(o.offer,p);us.forEach((u,ix)=>{if(scope==='glass'&&!isGlass(u))return;items.push({code:u.code,offer:o.offer,ref:p.ref,label:u.partLabel+' '+u.idx,cust:cust,pno:ix+1,ptot:us.length});});}});
  if(!items.length){area.innerHTML='<div class="empty">No labels for this scope.</div>';$('#lblCount').textContent='0 labels';return;}
  const PER=24;for(let i=0;i<items.length;i+=PER){const page=el('div','lsheet-page'),grid=el('div','lsheet-grid');items.slice(i,i+PER).forEach(it=>grid.appendChild(labelEl2(it)));page.appendChild(grid);area.appendChild(page);}
  const sheets=Math.ceil(items.length/PER);$('#lblCount').textContent=items.length+' labels · '+sheets+' sheet'+(sheets>1?'s':'')+' (24/sheet)';}
@@ -620,7 +626,7 @@ function handleScan(raw){const code=norm(raw);if(!code)return;const res=$('#scan
  res.className='result '+(rej?'bad':'ok');res.innerHTML='<div class="big">'+(rej?'✕ REJECTED':'✓ QC PASS')+'</div><div>'+esc(hit.posRef)+' · '+esc(lbl)+'</div><div class="mono">'+code+'</div>'+draw;
  beep(rej?200:660);if(pos&&pos.drawing)$('#scanRef').innerHTML='<div class="divh">Reference — '+esc(hit.posRef)+'</div><img class="scandraw" src="'+pos.drawing+'">';
  const rlt=rej?'reject':'pass';S.done=S.done||{};if(S.done[code]===rlt){res.className='result warn';res.innerHTML='<div class="big">Already '+(rej?'rejected':'QC’d')+' ✓</div><div>'+esc(hit.posRef)+' · '+esc(lbl)+'</div><div class="mono">'+code+'</div>';beep(330);return;}S.done[code]=rlt;
- save();queueScan(sel.offer,{code,position:hit.posRef,part:lbl},'qc',rej?'reject':'pass');renderScanStatus();}
+ save();queueScan(sel.offer,{code,position:hit.posRef,part:lbl},'qc',rej?'reject':'pass');renderScanStatus();maybeQcDone(sel.offer);}
 let scanFilter='';
 function renderScanControls(){const sel=$('#scanOrder');if(!sel)return;sel.innerHTML='';if(!S.orders.length){sel.innerHTML='<option value="">No orders</option>';return;}
  const q=(($('#scanSearch')||{}).value||'').trim().toLowerCase();let m=[];S.orders.forEach((o,i)=>{if(q&&(o.offer+' '+(o.cust.name||'')).toLowerCase().indexOf(q)<0)return;m.push(i);const op=el('option',null,o.offer+' — '+(o.cust.name||'—'));op.value=i;sel.appendChild(op);});

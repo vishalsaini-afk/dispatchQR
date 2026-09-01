@@ -112,7 +112,7 @@ const done={};            // codes received this session
 function saveSel(){localStorage.setItem('lingel_recv_sel',JSON.stringify(sel));}
 async function loadOrders(){const u=api();if(!u)return[];let list=[];try{const r=await postForm(u,{action:'qrOrders'});list=(r&&r.orders)||[];}catch(e){}
  slugMap={};list.forEach(o=>{slugMap[slugify(o.offer)]=o.offer;});
- const s=$('#oSel');const cur=s.value;s.innerHTML='<option value="">— pick an order —</option>'+list.filter(o=>sel.indexOf(o.offer)<0).map(o=>'<option value="'+esc(o.offer)+'">'+esc(o.offer)+' — '+esc(o.customer||'')+'</option>').join('');s.value=cur;
+ const s=$('#oSel');const cur=s.value;s.innerHTML='<option value="">— pick an order —</option>'+list.filter(o=>o.status==='dispatched'&&sel.indexOf(o.offer)<0).map(o=>'<option value="'+esc(o.offer)+'">'+esc(o.offer)+' — '+esc(o.customer||'')+'</option>').join('');s.value=cur;
  return list;}
 async function loadExpected(off){const u=api();if(!u)return;try{const r=await postForm(u,{action:'qrStatus',offer:off});expected[off]=(r&&r.units)||{};}catch(e){expected[off]=expected[off]||{};}}
 function selOffers(){return sel.slice();}

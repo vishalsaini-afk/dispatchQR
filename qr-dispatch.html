@@ -484,7 +484,7 @@ setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;
 S.truck=S.truck||{vehicle:'',driver:'',offers:[]};
 $('#veh').value=S.truck.vehicle||'';$('#drv').value=S.truck.driver||'';
 $('#veh').oninput=()=>{S.truck.vehicle=$('#veh').value;save();};$('#drv').oninput=()=>{S.truck.driver=$('#drv').value;save();};
-async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=(await pullOrders()).filter(o=>o.status!=='dispatched');S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
+async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=(await pullOrders()).filter(o=>o.status==='qc');
  const q=(($('#oSearch')||{}).value||'').trim().toLowerCase();sel.innerHTML='';
  list.filter(o=>!q||((o.offer+' '+(o.customer||'')).toLowerCase().indexOf(q)>=0)).forEach(o=>{const op=el('option',null,o.offer+' — '+(o.customer||'—'));op.value=o.offer;sel.appendChild(op);});
  if(!sel.options.length)sel.innerHTML='<option value="">No orders — refresh or add by number</option>';}
