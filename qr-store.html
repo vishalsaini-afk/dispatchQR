@@ -530,9 +530,15 @@ async function parseBOM(file){const name=(file.name||'').toLowerCase();const buf
 let cur=null; // current order object (from pulled def or manual)
 function setCur(o){o.hardware=o.hardware||[];o.bom=o.bom||[];cur=o;S.active=S.orders.findIndex(x=>x.offer===o.offer);if(S.active<0){S.orders.push(o);S.active=S.orders.length-1;}save();
  const t=$('#hwOffer');if(t)t.textContent=o.offer;$('#oMsg').innerHTML='Working on <b>'+esc(o.offer)+'</b>'+(o.cust&&o.cust.name?(' · '+esc(o.cust.name)):'')+'.';}
-async function fillOrders(){const sel=$('#oSel');if(!sel)return;let list=(await pullOrders()).filter(o=>o.status!=='dispatched');
- // merge any local
- S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
+async function fillOrders(){const sel=$('#oSel');if(!sel)return;
+ const all=await pullOrders();
+ const dispatched=new Set(all.filter(o=>o.status==='dispatched').map(o=>o.offer));
+ let list=all.filter(o=>o.status!=='dispatched');
+ if(all.length){ // online: show the shared active orders + only the order currently open (no stale local leftovers)
+  if(cur&&cur.offer&&!dispatched.has(cur.offer)&&!list.find(x=>x.offer===cur.offer))list.push({offer:cur.offer,customer:(cur.cust&&cur.cust.name)||''});
+ } else { // offline: fall back to this device's cached orders
+  S.orders.forEach(o=>{if(!list.find(x=>x.offer===o.offer))list.push({offer:o.offer,customer:(o.cust&&o.cust.name)||''});});
+ }
  const q=(($('#oSearch')||{}).value||'').trim().toLowerCase();sel.innerHTML='';
  const ph=el('option',null,'— pick an order —');ph.value='';sel.appendChild(ph);
  list.filter(o=>!q||((o.offer+' '+(o.customer||'')).toLowerCase().indexOf(q)>=0)).forEach(o=>{const op=el('option',null,o.offer+' — '+(o.customer||'—'));op.value=o.offer;sel.appendChild(op);});
