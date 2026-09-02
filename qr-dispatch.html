@@ -183,6 +183,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
   <div class="row"><button class="btn" id="addOffer">+ Add to truck</button><button class="btn ghost" id="oRefresh">↻ Refresh</button>
    <button class="btn ghost" id="oManual">Add by number</button></div>
   <div id="truckChips" style="margin-top:8px"></div>
+  <div class="hint" id="colHint" style="margin-top:6px;display:none">Tap the coloured square on an order to set its colour on the truck map.</div>
   <div class="row" style="margin-top:8px"><button class="btn ghost" id="clearTruck">Clear truck</button></div></div>
  <div class="card"><h2>Truck summary</h2><div id="truckSummary"><div class="empty">Add orders above.</div></div></div>
 </section>
@@ -499,10 +500,10 @@ $('#oManual').onclick=()=>{const off=prompt('Offer number:');if(off)addOffer(off
 $('#clearTruck').onclick=()=>{if(confirm('Clear all orders from this truck?')){S.truck.offers=[];save();renderTruck();renderScanStatus();}};
 async function syncTruck(){for(const off of S.truck.offers){await pullStatus(off,false);}}
 function truckUnits(){let a=[];S.truck.offers.forEach(off=>{const o=getDef(off);if(o)a=a.concat(allUnits(o).map(u=>({...u,offer:off})));});return a;}
-function renderTruck(){const chips=$('#truckChips');if(chips){chips.innerHTML=S.truck.offers.length?'':'<span class="hint">No orders on the truck yet.</span>';
+function renderTruck(){const ch=$('#colHint');if(ch)ch.style.display=S.truck.offers.length?'block':'none';const chips=$('#truckChips');if(chips){chips.innerHTML=S.truck.offers.length?'':'<span class="hint">No orders on the truck yet.</span>';
   S.truck.offers.forEach((off,i)=>{const c=el('span','tchip');const o=getDef(off);const col=(S.truck.colors&&S.truck.colors[off])||PAL_HEX[i%PAL_HEX.length];
-   c.innerHTML='<input type="color" class="tcol" value="'+col+'" title="Order colour" style="width:20px;height:20px;border:none;background:none;padding:0;vertical-align:middle;cursor:pointer"> <b>'+esc(off)+'</b> '+(o?allUnits(o).length+'p':'?')+' <span class="x">✕</span>';
-   c.querySelector('.tcol').oninput=e=>{S.truck.colors=S.truck.colors||{};S.truck.colors[off]=e.target.value;save();};
+   c.innerHTML='<label class="cswatch" style="position:relative;display:inline-block;width:26px;height:26px;border-radius:7px;border:2px solid rgba(255,255,255,.35);vertical-align:middle;cursor:pointer;overflow:hidden;background:'+esc(col)+'" title="Tap to choose this order\'s truck colour"><input type="color" class="tcol" value="'+col+'" style="position:absolute;inset:-4px;width:34px;height:34px;border:none;padding:0;background:none;cursor:pointer"></label> <b>'+esc(off)+'</b> '+(o?allUnits(o).length+'p':'?')+' <span class="x">✕</span>';
+   c.querySelector('.tcol').oninput=e=>{S.truck.colors=S.truck.colors||{};S.truck.colors[off]=e.target.value;e.target.parentNode.style.background=e.target.value;save();};
    c.querySelector('.x').onclick=()=>{S.truck.offers.splice(i,1);save();renderTruck();renderScanStatus();};chips.appendChild(c);});}
  const sum=$('#truckSummary');if(sum){if(!S.truck.offers.length){sum.innerHTML='<div class="empty">Add orders above.</div>';return;}
   let html='';S.truck.offers.forEach(off=>{const o=getDef(off);if(!o){html+='<div class="divh">'+esc(off)+' — definition missing</div>';return;}
