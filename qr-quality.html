@@ -474,7 +474,7 @@ function updateSyncBadges(){const n=S.outbox.length;const t=n?('⧗ '+n+' to syn
 function stripOrder(o){return{offer:o.offer,cust:o.cust||{name:''},colour:o.colour||'',mech:!!o.mech,
   positions:(o.positions||[]).map(p=>({no:p.no,ref:p.ref,dims:p.dims,mech:!!p.mech,system:p.system||'',spec:p.spec||'',parts:p.parts,custom:p.custom||[]}))};}
 async function pushOrder(o){const api=apiSilent();if(!api||!o)return;
-  try{await postForm(api,{action:'qrOrderPut',offer:o.offer,customer:(o.cust&&o.cust.name)||'',data:JSON.stringify(stripOrder(o))});}catch(e){}}
+  try{const r=await postForm(api,{action:'qrOrderPut',offer:o.offer,customer:(o.cust&&o.cust.name)||'',data:JSON.stringify(stripOrder(o))});if(r&&r.updated){o._upd=r.updated;save();}}catch(e){}}
 async function pullOrders(){const api=apiSilent();if(!api)return[];try{const r=await postForm(api,{action:'qrOrders'});return(r&&r.orders)||[];}catch(e){return[];}}
 async function pullOrder(offer){const api=apiSilent();if(!api)return null;try{const r=await postForm(api,{action:'qrOrder',offer});
   if(r&&r.order){r.order.hardware=r.order.hardware||[];return r.order;}return null;}catch(e){return null;}}
@@ -508,9 +508,9 @@ function hidInput(id){const si=$(id);if(!si)return;si.addEventListener('keydown'
 
 /* ============ app ============ */
 
-navSetup(v=>{if(v==='parts')renderParts();if(v==='labels'){renderLabels();refreshDispatched();}
-  if(v==='scan'){renderScanControls();renderScanStatus();updateSyncBadges();const o=order();if(o)pullStatus(o.offer,false).then(k=>{if(k)renderScanStatus();});flushScans();setTimeout(()=>$('#scanInp').focus(),50);}});
-setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;refreshDispatched();
+navSetup(v=>{if(v==='parts'){renderParts();refreshDispatched();}if(v==='labels'){renderLabels();refreshDispatched();}
+  if(v==='scan'){refreshDispatched();renderScanControls();renderScanStatus();updateSyncBadges();const o=order();if(o)pullStatus(o.offer,false).then(k=>{if(k)renderScanStatus();});flushScans();setTimeout(()=>$('#scanInp').focus(),50);}});
+setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;refreshDispatched();setInterval(function(){if(document.visibilityState!=='hidden')refreshDispatched();},20000);
 /* import */
 $('#pick').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#importMsg').textContent='Reading '+f.name+'…';
@@ -529,8 +529,25 @@ $('#manual').onclick=()=>{const offer=prompt('Offer number:');if(offer===null)re
  const o={id:Date.now(),offer:offer||('ORD-'+(S.orders.length+1)),cust:{name,phone:'',addr:''},colour:'',mech:false,hardware:[],
   positions:Array.from({length:nPos},(_,i)=>({no:i+1,ref:'Pos '+(i+1),dims:'',w:0,h:0,mech:false,system:'',spec:'',parts:{frame:1,sash:0,glass:1,mesh:0,georgian:0,coupling:0}}))};
  S.orders.push(o);S.active=S.orders.length-1;save();renderOrders();pushOrder(o);};
-let dispatchedSet=new Set();let statusMap={};
-async function refreshDispatched(){try{const l=await pullOrders();dispatchedSet=new Set();statusMap={};l.forEach(o=>{statusMap[o.offer]=o.status||'';if(o.status==='dispatched')dispatchedSet.add(o.offer);});}catch(e){}renderOrders();renderLabels();}
+let dispatchedSet=new Set();let statusMap={};let _syncing=false;
+async function refreshDispatched(){if(_syncing)return;_syncing=true;let changed=false;
+ try{const l=await pullOrders();dispatchedSet=new Set();statusMap={};l.forEach(o=>{statusMap[o.offer]=o.status||'';if(o.status==='dispatched')dispatchedSet.add(o.offer);});
+  const activeOffer=(S.orders[S.active]||{}).offer;
+  for(const so of l){if(so.status==='dispatched')continue;
+    const local=S.orders.find(x=>x.offer===so.offer);
+    if(!local){ // colleague imported a new order → add it
+      const full=await pullOrder(so.offer);
+      if(full&&full.offer&&!S.orders.find(x=>x.offer===full.offer)){full.positions=full.positions||[];full.cust=full.cust||{name:so.customer||''};full._upd=so.updated||Date.now();S.orders.push(full);changed=true;}
+    } else if((so.updated||0)>(local._upd||0) && so.offer!==activeOffer){ // colleague edited it → pull the newer definition, keep our drawings
+      const full=await pullOrder(so.offer);
+      if(full&&full.offer){const dmap={};(local.positions||[]).forEach(p=>{if(p.drawing)dmap[p.no]=p.drawing;});
+        local.cust=full.cust||local.cust;local.colour=full.colour||local.colour;local.mech=!!full.mech;
+        local.positions=(full.positions||[]).map(p=>{if(dmap[p.no])p.drawing=dmap[p.no];return p;});
+        local._upd=so.updated||Date.now();changed=true;}
+    }}
+  if(changed)save();
+ }catch(e){}
+ _syncing=false;renderOrders();renderLabels();if(typeof renderParts==='function')renderParts();}
 async function sendToDispatch(offer,silent){const u=apiSilent();if(!u)return;const o=S.orders.find(x=>x.offer===offer);try{await postForm(u,{action:'orderStatus',offer:offer,status:'qc',customer:(o&&o.cust&&o.cust.name)||''});}catch(e){}statusMap[offer]='qc';if(!silent){renderOrders();}}
 function maybeQcDone(offer){const o=S.orders.find(x=>x.offer===offer);if(!o)return;if(statusMap[offer]==='qc'||statusMap[offer]==='dispatched')return;const us=allUnits(o);if(us.length&&us.every(x=>ust(x.code).qc)){sendToDispatch(offer,true);}}
 function renderOrders(){const box=$('#ordersList');if(!box)return;box.innerHTML='';$('#ordersCard').style.display=S.orders.length?'block':'none';
