@@ -193,11 +193,11 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
 <div class="wrap">
 
 <section class="view on" id="v-import">
- <div class="card"><h2>Import quotation</h2>
-  <div class="row"><button class="btn" id="pick">📄 Upload quotation PDF</button>
+ <div class="card"><h2>Import production sheet</h2>
+  <div class="row"><button class="btn" id="pick">📄 Upload production sheet PDF</button>
    <button class="btn ghost" id="manual">+ Manual order</button></div>
   <input type="file" id="file" accept="application/pdf" hidden>
-  <p class="hint" id="importMsg">Import the quotation. Parts are read from each position's description; set/verify them on the Parts tab, then print the QR labels to paste at the quality stage.</p></div>
+  <p class="hint" id="importMsg">Import the production sheet. Frame, sashes, glass and mesh are read from each position's profile table and cut list, and a "Mechanical Join" frame is set to 4 profiles. Check them on the Parts tab, then print the QR labels to paste at the quality stage.</p></div>
  <div class="card" id="ordersCard" style="display:none"><h2>Orders</h2>
   <div class="hint" style="margin-bottom:8px">Tap an order to select it · Remove deletes it here and from the shared list (scan history is kept).</div>
   <div id="ordersList"></div></div>
@@ -208,7 +208,7 @@ nav button.on .ic{filter:drop-shadow(0 0 6px rgba(255,206,31,.5))}
   <div class="mechrow" style="border-style:solid"><label class="switch"><input type="checkbox" id="allMech"><i></i></label>
    <div><b>All positions mechanical joint</b><div class="hint">Sets every frame to 4 profiles.</div></div>
    <span class="totchip" id="orderTot">0 parts</span></div>
-  <div class="row" style="margin-top:10px"><button class="btn ghost" id="rereadBtn">↻ Re-read parts from descriptions</button></div></div>
+  <div class="row" style="margin-top:10px"><button class="btn ghost" id="rereadBtn">↻ Reset parts to production sheet</button></div></div>
  <div id="posList"></div>
 </section>
 <section class="view" id="v-labels">
@@ -471,7 +471,7 @@ function mergeUnits(units){Object.keys(units).forEach(code=>{const u=units[code]
 function updateSyncBadges(){const n=S.outbox.length;const t=n?('⧗ '+n+' to sync'):'✓ synced';const cls='pill '+(n?'':'ok');
   document.querySelectorAll('.syncBadge').forEach(e=>{e.textContent=t;e.className='syncBadge '+cls;});}
 function stripOrder(o){return{offer:o.offer,cust:o.cust||{name:''},colour:o.colour||'',mech:!!o.mech,
-  positions:(o.positions||[]).map(p=>({no:p.no,ref:p.ref,dims:p.dims,mech:!!p.mech,system:p.system||'',spec:p.spec||'',parts:p.parts,custom:p.custom||[]}))};}
+  positions:(o.positions||[]).map(p=>({no:p.no,ref:p.ref,dims:p.dims,mech:!!p.mech,system:p.system||'',spec:p.spec||'',parts:p.parts,custom:p.custom||[],sheet:p.sheet||null,sheetMech:!!p.sheetMech}))};}
 async function pushOrder(o){const api=apiSilent();if(!api||!o)return;
   try{const r=await postForm(api,{action:'qrOrderPut',offer:o.offer,customer:(o.cust&&o.cust.name)||'',data:JSON.stringify(stripOrder(o))});if(r&&r.updated){o._upd=r.updated;save();}}catch(e){}}
 async function pullOrders(){const api=apiSilent();if(!api)return[];try{const r=await postForm(api,{action:'qrOrders'});return(r&&r.orders)||[];}catch(e){return[];}}
@@ -510,19 +510,82 @@ function hidInput(id){const si=$(id);if(!si)return;si.addEventListener('keydown'
 navSetup(v=>{if(v==='parts'){renderParts();refreshDispatched();}if(v==='labels'){renderLabels();refreshDispatched();}
   if(v==='scan'){refreshDispatched();renderScanControls();renderScanStatus();updateSyncBadges();const o=order();if(o)pullStatus(o.offer,false).then(k=>{if(k)renderScanStatus();});flushScans();setTimeout(()=>$('#scanInp').focus(),50);}});
 setupLogo();setupCam();hidInput('#scanInp');window.onScan=handleScan;refreshDispatched();setInterval(function(){if(document.visibilityState!=='hidden')refreshDispatched();},20000);
+/* ---- production sheet reader ----
+   Splits at "Order-Pos.:". Profile table: the row with no Nr is the frame, numbered rows are glass sashes
+   (one glass each); a single numbered row and no frame row = fixed window. Mesh sashes = "Aluminium Sliding Sash"
+   45/45 pieces / 4 (the mesh holding frame belongs to the mesh sash). "Mechanical Join" = frame ships as 4 profiles. */
+const PS_NUM=/^\d{2,5}[,.]\d{1,2}$/;
+const psNum=s=>parseFloat(String(s).replace(',','.'));
+async function readProductionSheet(file,progress){
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const lines=[];
+  for(let pn=1;pn<=pdf.numPages;pn++){progress&&progress('Reading page '+pn+' of '+pdf.numPages+'…');
+    const page=await pdf.getPage(pn);const vp=page.getViewport({scale:1});const tc=await page.getTextContent();const toks=[];
+    tc.items.forEach(it=>{if(!it.str||!it.str.trim())return;const x=it.transform[4],y=vp.height-it.transform[5],cw=(it.width||0)/Math.max(1,it.str.length);
+      let i=0;it.str.split(/(\s+)/).forEach(part=>{if(part.trim())toks.push({s:part,x:x+i*cw,y});i+=part.length;});});
+    toks.sort((a,b)=>a.y-b.y||a.x-b.x);const rows=[];
+    toks.forEach(t=>{const r=rows.find(r=>Math.abs(r.y-t.y)<2.5);r?r.toks.push(t):rows.push({y:t.y,toks:[t]});});
+    rows.sort((a,b)=>a.y-b.y).forEach(r=>{r.toks.sort((a,b)=>a.x-b.x);lines.push({page:pn,y:r.y,toks:r.toks,text:r.toks.map(t=>t.s).join(' ')});});}
+  const full=lines.map(l=>l.text).join('\n');const g=(re,t)=>{const m=(t==null?full:t).match(re);return m?m[1].trim():'';};
+  const addr=g(/Delivery Address:\s*([^\n]*)/).replace(/^[,\s]+|[,\s]+$/g,'');
+  const out={pdf,offer:g(/Dokument-Nr\.?\s*:\s*(\S+)/),cust:{name:g(/Customer:\s*(.+?)\s+Administrator:/),phone:g(/Tel\.?:\s*([+\d][\d\s-]{7,})/),addr},
+    colour:g(/Colour\s*:\s*([^\n]+)/).split(/\s+(?:Hardware|Frame|Sash|Handle)\b/)[0]||g(/Color:\s*(\S+)/).replace(/_/g,' '),admin:g(/Administrator:\s*([^\n]+)/),sales:g(/Sales by:\s*([^\n]+)/),positions:[]};
+  const ops=lines.map((l,i)=>/Order-Pos\.?\s*:/.test(l.text)?i:-1).filter(i=>i>=0),seen={};
+  ops.forEach((oi,k)=>{const end=k+1<ops.length?ops[k+1]:lines.length,bl=lines.slice(oi,end),L0=lines[oi],txt=bl.map(l=>l.text).join('\n');
+    let ref=g(/Order-Pos\.?\s*:\s*(.*?)\s*(?:Color:|Quantity:|$)/,L0.text),contY=L0.y;const nx=lines[oi+1];
+    if(nx&&nx.page===L0.page&&nx.y-L0.y<14&&!nx.text.includes(':')&&nx.text.length<=24){ref+=' '+nx.text.trim();contY=nx.y;}
+    if(seen[ref]){seen[ref]++;ref+=' ('+seen[ref]+')';}else seen[ref]=1;
+    const p={ref,qty:+g(/Quantity:\s*(\d+)/,L0.text)||1,series:g(/Lingel\s*([\d.]+)/,txt),frameType:g(/Frame\s*:\s*([^\n]+?)(?:\s{2,}|$)/m,txt),
+      mech:/Mechanical\s+Join/i.test(txt),coupling:/coupl/i.test(txt)?1:0,frame:null,rows:[],fixed:false,_page:L0.page,_y0:contY+6};
+    const hi=bl.findIndex(l=>/^Nr\b/.test(l.text)&&l.text.includes('Artikel'));
+    if(hi>=0){const H=bl[hi],arts=H.toks.filter(t=>t.s==='Artikel'),nrMax=arts[0].x-3,colMax=arts[1]?arts[1].x-3:arts[0].x+150,tl=[];
+      for(let i=hi+1;i<bl.length;i++){const l=bl[i];if(l.page!==H.page||/^(Connectors|Sliding|Shutter|Hardware|ISO|Production)/.test(l.text))break;tl.push(...l.toks.filter(t=>t.x<colMax));}
+      const nums=tl.filter(t=>PS_NUM.test(t.s)),rows=[];nums.forEach(t=>{const r=rows.find(r=>Math.abs(r.y-t.y)<2.5);r?r.n.push(t):rows.push({y:t.y,n:[t]});});
+      rows.sort((a,b)=>a.y-b.y).forEach((r,i)=>{if(r.n.length<2)return;r.n.sort((a,b)=>a.x-b.x);const ny=rows[i+1]?rows[i+1].y:1e9,lim=Math.min(ny-2.5,r.y+16);
+        const art=tl.filter(t=>/[A-Za-z]/.test(t.s)&&t.x<r.n[0].x-1&&t.y>=r.y-3&&t.y<lim).sort((a,b)=>a.y-b.y||a.x-b.x).map(t=>t.s).join('');
+        const nr=tl.find(t=>t.x<nrMax+6&&/^\d{1,2}$/.test(t.s)&&t.y>=r.y-3&&t.y<lim);const o={art,w:psNum(r.n[0].s),h:psNum(r.n[1].s),nr:nr?+nr.s:0};
+        if(o.nr)p.rows.push(o);else if(!p.frame)p.frame=o;});}
+    if(!p.frame&&p.rows.length===1){p.frame=p.rows[0];p.fixed=true;}
+    p.nGlass=p.rows.length;p.nSash=p.fixed?0:p.rows.length;
+    p.nMesh=Math.ceil((txt.match(/Aluminium Sliding Sash[^\n]*?\s45\s+45\s+[UOLR]\b/g)||[]).length/4);
+    p.w=p.frame?Math.round(p.frame.w):0;p.h=p.frame?Math.round(p.frame.h):0;
+    const spec=[];bl.forEach(l=>{if(l.page!==L0.page||l.y<=L0.y||(hi>=0&&l.y>=bl[hi].y))return;const t=l.toks.filter(x=>x.x>250).map(x=>x.s).join(' ').trim();if(t&&!/^Flügel|^Handle Height$/.test(t))spec.push(t);});
+    const prof=[p.frame&&('Frame '+(p.frame.art||'')+' '+p.w+'×'+p.h)].concat(p.rows.map(r=>(p.fixed?'Glass ':'Sash '+r.nr+' ')+(r.art||'')+' '+Math.round(r.w)+'×'+Math.round(r.h)));
+    if(p.nMesh)prof.push(p.nMesh+' mesh sash');
+    p.spec=[prof.filter(Boolean).join(' · ')+(p.qty>1?' · Quantity '+p.qty:''),spec.join(' · ')].filter(Boolean).join(' — ');
+    p.posNo=parseInt(ref,10)||0;out.positions.push(p);});
+  out.positions.sort((a,b)=>(a.posNo||999)-(b.posNo||999));
+  const nums=out.positions.map(p=>p.posNo),unique=nums.every(n=>n>0)&&new Set(nums).size===nums.length;
+  out.positions.forEach((p,i)=>p.no=unique?p.posNo:i+1);
+  return out;}
+/* elevation drawing under each Order-Pos: stops at the first white band once ~100pt of drawing is seen (section drawings follow) */
+async function extractSheetDrawings(pdf,positions){const byPage={};positions.forEach(p=>{if(p._page)(byPage[p._page]=byPage[p._page]||[]).push(p);});
+  for(const pg of Object.keys(byPage)){let page;try{page=await pdf.getPage(+pg);}catch(e){continue;}
+    const S=2,vp=page.getViewport({scale:S}),cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);try{await page.render({canvasContext:ctx,viewport:vp}).promise;}catch(e){continue;}
+    byPage[pg].forEach(p=>{try{const x0=25,x1=188,y0=p._y0,y1=Math.min(vp.height/S,y0+330);if(y1-y0<30)return;
+      const c=document.createElement('canvas');c.width=(x1-x0)*S;c.height=Math.round((y1-y0)*S);const cx=c.getContext('2d');cx.drawImage(cv,x0*S,y0*S,c.width,c.height,0,0,c.width,c.height);
+      const d=cx.getImageData(0,0,c.width,c.height).data;let first=-1,blank=0,cut=c.height;
+      for(let y=0;y<c.height;y++){let ink=false;for(let x=0;x<c.width;x+=2){const i=(y*c.width+x)*4;if(d[i]+d[i+1]+d[i+2]<600){ink=true;break;}}
+        if(ink){if(first<0)first=y;blank=0;}else if(first>=0){blank++;if(y-first>100*S&&blank>=7*S){cut=y-blank+1;break;}}}
+      const o=document.createElement('canvas');o.width=c.width;o.height=cut;o.getContext('2d').drawImage(c,0,0);
+      const dd=downscale(trimWhite(o),560);if(dd)p.drawing=dd;}catch(e){}});}}
+const sheetSystem=p=>p.fixed?'fixed':/three\s*track|3\s*track/i.test(p.frameType)?'sld3':/slid/i.test(p.frameType)?'sld2':'';
+function sheetParts(p){const q=p.qty||1;return{frame:p.mech?4:q,sash:p.nSash*q,glass:p.nGlass*q,mesh:p.nMesh*q,georgian:0,coupling:p.coupling};}
 /* import */
 $('#pick').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#importMsg').textContent='Reading '+f.name+'…';
- try{const {pdf,L}=await pdfToDoc(f);const r=parseLines(L.map(x=>x.t));
-  if(!r.positions.length){$('#importMsg').textContent='No positions found — check the PDF or add manually.';return;}
-  const o={id:Date.now(),offer:r.offer||('ORD-'+(S.orders.length+1)),cust:r.cust,colour:r.colour,mech:false,hardware:[],
-   positions:r.positions.map(p=>{const m=L[p._line]||{};const pos={no:p.no,ref:p.ref,dims:p.dims,w:p.w,h:p.h,mech:false,system:'',spec:p.spec||'',_page:m.page,_y:m.y,drawing:'',parts:{frame:1,sash:0,glass:1,mesh:0,georgian:0,coupling:0}};
-    const pt=partsFromText(p.spec);if(pt){pos.system=pt.sys||'';pos.parts.sash=pt.sash;pos.parts.glass=pt.glass;pos.parts.mesh=pt.mesh;pos.parts.georgian=pt.georgian;pos.parts.coupling=pt.coupling;}
-    else{const g=guessType(p.ref);if(g)applySystem(pos,g);}return pos;})};
+ try{const r=await readProductionSheet(f,t=>$('#importMsg').textContent=t);
+  if(!r.positions.length){$('#importMsg').textContent='No "Order-Pos." found — is this a Lingel production sheet? Add the order manually instead.';return;}
+  const allMech=r.positions.every(p=>p.mech);
+  const o={id:Date.now(),offer:r.offer||('ORD-'+(S.orders.length+1)),cust:r.cust,colour:r.colour,mech:allMech,hardware:[],source:'production sheet',
+   positions:r.positions.map(p=>{const parts=sheetParts(p);return{no:p.no,ref:p.ref,dims:(p.w||'?')+' x '+(p.h||'?'),w:p.w,h:p.h,mech:p.mech,system:sheetSystem(p),
+     spec:p.spec,_page:p._page,_y0:p._y0,drawing:'',parts,sheet:Object.assign({},parts),sheetMech:p.mech};})};
   S.orders.push(o);S.active=S.orders.length-1;save();renderOrders();pushOrder(o);
-  $('#importMsg').innerHTML='Loaded <b>'+esc(o.offer)+'</b> — '+o.positions.length+' positions. Rendering drawings…';
-  extractDrawings(pdf,o.positions).then(()=>{save();renderOrders();renderParts();pushOrder(o);
-   $('#importMsg').innerHTML='Loaded <b>'+esc(o.offer)+'</b> — '+o.positions.length+' positions. Parts read from the descriptions — check on Parts.';}).catch(()=>{});
+  const tot=allUnits(o).length,nm=o.positions.filter(p=>p.mech).length;
+  const msg='Loaded <b>'+esc(o.offer)+'</b> — '+o.positions.length+' positions, '+tot+' parts'+(nm?' ('+nm+' with mechanical-join frames = 4 profiles)':'')+'.';
+  $('#importMsg').innerHTML=msg+' Rendering drawings…';
+  extractSheetDrawings(r.pdf,o.positions).then(()=>{save();renderOrders();renderParts();pushOrder(o);
+   $('#importMsg').innerHTML=msg+' Parts read from the production sheet — check on Parts.';}).catch(()=>{});
  }catch(err){$('#importMsg').textContent='Could not read PDF: '+err.message;}e.target.value='';};
 $('#manual').onclick=()=>{const offer=prompt('Offer number:');if(offer===null)return;const nPos=parseInt(prompt('How many positions?','1')||'0',10);if(!nPos)return;const name=prompt('Customer name:')||'';
  const o={id:Date.now(),offer:offer||('ORD-'+(S.orders.length+1)),cust:{name,phone:'',addr:''},colour:'',mech:false,hardware:[],
@@ -564,7 +627,7 @@ function renderTabs(host){if(!host)return;host.innerHTML='';S.orders.forEach((o,
   d.onclick=()=>{S.active=i;save();renderParts();};host.appendChild(d);});}
 /* parts (no hardware here) */
 function renderParts(){renderTabs($('#otabsParts'));const o=order();const list=$('#posList');if(!list)return;list.innerHTML='';
- if(!o){$('#partsMech').style.display='none';list.innerHTML='<div class="empty">Import a quotation first.</div>';return;}
+ if(!o){$('#partsMech').style.display='none';list.innerHTML='<div class="empty">Import a production sheet first.</div>';return;}
  $('#partsMech').style.display='block';$('#allMech').checked=o.mech;$('#orderTot').textContent=allUnits(o).length+' parts';
  o.positions.forEach(p=>{const card=el('div','pos'+(p._open?' open':''));const tot=unitsForPosition(o.offer,p).length;
   card.innerHTML='<div class="ph"><div class="no">'+p.no+'</div>'+(p.drawing?'<img class="pdraw" src="'+p.drawing+'">':'')+
@@ -574,7 +637,7 @@ function renderParts(){renderTabs($('#otabsParts'));const o=order();const list=$
   const sys=el('label','fld','<span>System type — auto-fills the part counts</span>');const ssel=document.createElement('select');ssel.className='inp';
   ssel.innerHTML='<option value="">Custom</option>'+SYSTEMS.map(s=>'<option value="'+s.key+'"'+(p.system===s.key?' selected':'')+'>'+s.name+'</option>').join('');
   ssel.onchange=()=>{applySystem(p,ssel.value);save();pushOrder(o);renderParts();};sys.appendChild(ssel);body.appendChild(sys);
-  if(p.spec){const q=el('div','hint');q.style.marginBottom='8px';q.innerHTML='<b style="color:var(--mut)">Quoted description — check parts match this:</b> ';q.appendChild(document.createTextNode(p.spec.slice(0,400)));body.appendChild(q);}
+  if(p.spec){const q=el('div','hint');q.style.marginBottom='8px';q.innerHTML='<b style="color:var(--mut)">'+(p.sheet?'Production sheet':'Quoted description')+' — check parts match this:</b> ';q.appendChild(document.createTextNode(p.spec.slice(0,400)));body.appendChild(q);}
   const mech=el('div','mechrow','<label class="switch"><input type="checkbox" '+(p.mech?'checked':'')+'><i></i></label><div><b>Mechanical joint</b><div class="hint">Frame ships as 4 profiles.</div></div><span class="totchip">'+tot+' parts</span>');
   mech.querySelector('input').onchange=e=>{p.mech=e.target.checked;if(p.mech)p.parts.frame=4;save();pushOrder(o);renderParts();};body.appendChild(mech);
   function refreshTot(){const t=unitsForPosition(o.offer,p).length;const tc=card.querySelector('.totchip');if(tc)tc.textContent=t+' parts';
@@ -599,8 +662,8 @@ function deriveCode(label,used){const s=String(label).toUpperCase().replace(/[^A
  for(let i=0;i<s.length;i++)for(let j=i+1;j<s.length;j++){const c=s[i]+s[j];if(!used.has(c))return c;}
  const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ';for(const a of A)for(const b of A){const c=a+b;if(!used.has(c))return c;}return 'ZZ';}
 $('#allMech').onchange=e=>{const o=order();if(!o)return;o.mech=e.target.checked;o.positions.forEach(p=>{p.mech=e.target.checked;if(p.mech)p.parts.frame=4;});save();pushOrder(o);renderParts();};
-$('#rereadBtn').onclick=()=>{const o=order();if(!o)return;if(!confirm('Re-read part counts from each position\'s quotation description? This overwrites the current counts.'))return;
- o.positions.forEach(p=>{const pt=partsFromText(p.spec);if(pt){p.system=pt.sys||'';p.parts.sash=pt.sash;p.parts.glass=pt.glass;p.parts.mesh=pt.mesh;p.parts.georgian=pt.georgian;p.parts.coupling=pt.coupling;if(!p.mech)p.parts.frame=1;}});
+$('#rereadBtn').onclick=()=>{const o=order();if(!o)return;if(!confirm('Reset every position\'s part counts to what the production sheet says? This overwrites the current counts.'))return;
+ o.positions.forEach(p=>{if(p.sheet){p.parts=Object.assign({},p.sheet);p.mech=!!p.sheetMech;return;}const pt=partsFromText(p.spec);if(pt){p.system=pt.sys||'';p.parts.sash=pt.sash;p.parts.glass=pt.glass;p.parts.mesh=pt.mesh;p.parts.georgian=pt.georgian;p.parts.coupling=pt.coupling;if(!p.mech)p.parts.frame=1;}});
  save();pushOrder(o);renderParts();};
 /* labels (positions + parts, no hardware) */
 function renderLabels(){const sel=$('#lblOrder');if(!sel)return;sel.innerHTML='';S.orders.forEach((o,i)=>{if(dispatchedSet.has(o.offer))return;const op=el('option',null,o.offer+' — '+(o.cust.name||'—'));op.value=i;sel.appendChild(op);});sel.value=S.active;drawSheet();}
